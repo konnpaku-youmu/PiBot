@@ -1,0 +1,9 @@
+%YAML:1.0
+frameCount: 20
+pattern: 0
+patternSize:
+  rows: 9
+  cols: 6
+  spacing: 0.035
+dataSource: 0
+interval: 4
