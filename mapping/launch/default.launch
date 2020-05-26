@@ -1,0 +1,3 @@
+<launch>
+    <node pkg="mapping" type="mapping_node" name="mapping_node" output="screen" />
+</launch>
