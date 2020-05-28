@@ -29,6 +29,8 @@ namespace mapping
         {
             Eigen::MatrixXf _transform;
             pcl::PointCloud<pcl::PointXYZ>::Ptr _transformed_pcl(new pcl::PointCloud<pcl::PointXYZ>);
+            pcl::PointCloud<pcl::PointXYZ>::Ptr _non_filtered_pcl(new pcl::PointCloud<pcl::PointXYZ>);
+
             estimateTrans(newCloud, prevCloud, _transform);
 
             Eigen::Quaternionf q(_transform.block<3, 3>(0, 0));
@@ -42,8 +44,8 @@ namespace mapping
 
             posePub.publish(currPose);
 
-            trans(0, 3) =  1.1*currPose.pose.position.x;
-            trans(1, 3) =  1.1*currPose.pose.position.y;
+            trans(0, 3) = 1 * currPose.pose.position.x;
+            trans(1, 3) = 1 * currPose.pose.position.y;
             trans.block<3, 3>(0, 0) = _transform.block<3, 3>(0, 0);
 
             pcl::transformPointCloud(*newCloud, *_transformed_pcl, trans);
@@ -57,15 +59,19 @@ namespace mapping
             _msg.header.stamp = ros::Time::now();
             testPclPub.publish(_msg);
 
-            for (auto _pt : _transformed_pcl->points)
+            if (_seq_num % 5 == 0)
             {
-                prevCloud->points.push_back(_pt);
+                for (auto _pt : _transformed_pcl->points)
+                {
+                    prevCloud->points.push_back(_pt);
+                }
             }
             // raise(SIGINT);
         }
 
         // find the mean range of last frame of points
         _calc_mean_dist(newCloud);
+        _seq_num++;
         return;
     }
 
@@ -73,43 +79,7 @@ namespace mapping
                                   const pcl::PointCloud<pcl::PointXYZ>::ConstPtr _prev,
                                   Eigen::MatrixXf &_T)
     {
-        // select points from existing pcl by distance
-        pcl::PointCloud<pcl::PointXYZ>::Ptr _pts_in(new pcl::PointCloud<pcl::PointXYZ>);
-        pcl::ExtractIndices<pcl::PointXYZ> clipper;
-        clipper.setInputCloud(_prev);
-        pcl::PointIndices indices;
 
-        for (size_t i = 0; i < _prev->points.size(); ++i)
-        {
-            pcl::PointXYZ currPt;
-            currPt.x = currPose.pose.position.x;
-            currPt.y = currPose.pose.position.y;
-            float _dist = _calc_dist(currPt, _prev->points[i]);
-            if (_dist > 10 * _mean_dist)
-            {
-                indices.indices.push_back(i);
-            }
-        }
-        clipper.setIndices(boost::make_shared<pcl::PointIndices>(indices));
-        clipper.setNegative(true);
-        clipper.filter(*_pts_in);
-
-        pcl::PointCloud<pcl::PointXYZ>::Ptr _final(new pcl::PointCloud<pcl::PointXYZ>);
-        pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> _icp;
-        _icp.setInputCloud(_curr);
-        _icp.setInputTarget(_pts_in);
-        _icp.setMaximumIterations(50);
-        _icp.setTransformationEpsilon(1e-8);
-        _icp.setMaxCorrespondenceDistance(5);
-        _icp.setEuclideanFitnessEpsilon(0.01);
-        _icp.setRANSACOutlierRejectionThreshold(0.01);
-
-        _icp.align(*_final);
-
-        if (_icp.hasConverged())
-        {
-            _T = _icp.getFinalTransformation();
-        }
     }
 
     void Localizer::_align_icp(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr _query,
@@ -165,46 +135,38 @@ namespace mapping
 
         this->localizer->init(nh);
 
-        genericHeader.frame_id = "laser";
-        genericHeader.seq = __seqNum__;
-        genericHeader.stamp = ros::Time::now();
-
         ros::Rate spinRate(10);
         while (ros::ok())
         {
             __seqNum__++;
-            genericHeader.stamp = ros::Time::now();
             ros::spinOnce();
             spinRate.sleep();
         }
     }
 
-    void SLAMCore::laserCb(const sensor_msgs::LaserScanConstPtr rawScan)
+    void SLAMCore::laserCb(const sensor_msgs::LaserScanConstPtr _raw_scan)
     {
-        pcl::PointCloud<pcl::PointXYZ>::Ptr rawCloud(new pcl::PointCloud<pcl::PointXYZ>);
+        pcl::PointCloud<pcl::PointXYZ>::Ptr _raw_cloud(new pcl::PointCloud<pcl::PointXYZ>);
         // convert laser scan to pointcloud
-        scanToPcl(rawScan, rawCloud);
+        scanToPcl(_raw_scan, _raw_cloud);
 
-        localizer->update(rawCloud, mapper->globalCloud);
-
-        sensor_msgs::PointCloud2 cloudMsg;
-        pcl::toROSMsg(*mapper->globalCloud, cloudMsg);
-        cloudMsg.header = genericHeader;
-        pclPub.publish(cloudMsg);
+        localizer->update(_raw_cloud, mapper->globalCloud);
     }
 
-    void SLAMCore::scanToPcl(const sensor_msgs::LaserScanConstPtr originScan,
-                             const pcl::PointCloud<pcl::PointXYZ>::Ptr dstPcl)
+    void SLAMCore::scanToPcl(const sensor_msgs::LaserScanConstPtr _rawScan,
+                             const pcl::PointCloud<pcl::PointXYZ>::Ptr _dstPcl)
     {
-        dstPcl->header.frame_id = "laser";
-        dstPcl->header.stamp = ros::Time::now().sec;
+        _dstPcl->header.frame_id = "laser";
+        _dstPcl->header.seq = __seqNum__;
+        _dstPcl->header.stamp = ros::Time::now().sec;
 
-        float minPhi = originScan->angle_min;
-        float maxPhi = originScan->angle_max;
-        float dPhi = originScan->angle_increment;
+        float minPhi = _rawScan->angle_min;
+        float maxPhi = _rawScan->angle_max;
+        float dPhi = _rawScan->angle_increment;
 
         float currPhi = minPhi;
-        for (float range : originScan->ranges)
+        pcl::PointCloud<pcl::PointXYZ>::Ptr _raw(new pcl::PointCloud<pcl::PointXYZ>);
+        for (float range : _rawScan->ranges)
         {
             if (range > 100)
             {
@@ -216,10 +178,15 @@ namespace mapping
             newPt.x = range * cos(currPhi);
             newPt.y = range * sin(currPhi);
 
-            dstPcl->points.push_back(newPt);
+            _raw->points.push_back(newPt);
 
             currPhi += dPhi;
         }
+
+        pcl::VoxelGrid<pcl::PointXYZ> _filter;
+        _filter.setInputCloud(_raw);
+        _filter.setLeafSize(0.1, 0.1, 0.1);
+        _filter.filter(*_dstPcl);
     }
 
     void SLAMCore::publish_all()

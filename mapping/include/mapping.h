@@ -12,6 +12,8 @@
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/filters/extract_indices.h>
 #include <pcl/registration/icp.h>
+#include <pcl/registration/ndt.h>
+#include <pcl/filters/voxel_grid.h>
 
 namespace mapping
 {
@@ -85,8 +87,6 @@ namespace mapping
         std::unique_ptr<Localizer> localizer;
 
         std::shared_ptr<Mapper> mapper;
-
-        std_msgs::Header genericHeader;
 
         void laserCb(const sensor_msgs::LaserScanConstPtr);
 
