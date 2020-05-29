@@ -17,35 +17,27 @@
 
 namespace mapping
 {
+#define NDT_GRID_SIZE 1.0
+#define min 
+    class Odometry
+    {
+    };
+
     class Localizer
     {
     private:
-        ros::NodeHandle n;
-
-        ros::Publisher posePub;
-
-        ros::Publisher currPclPub;
-
-        ros::Publisher testPclPub;
-
         geometry_msgs::PoseStamped initPose;
 
         geometry_msgs::PoseStamped currPose;
 
-        geometry_msgs::PoseStamped currVelo;
-
-        Eigen::Matrix4f trans = Eigen::Matrix4f::Identity();
-
         float _mean_dist = 0;
 
-        uint32_t _seq_num = 0;
+        void _align_icp(const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr,
+                        const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr);
 
-        void _align_icp(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr,
-                      const pcl::PointCloud<pcl::PointXYZ>::ConstPtr);
+        void _ndt(const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr);
 
-        void _calc_mean_dist(const pcl::PointCloud<pcl::PointXYZ>::Ptr);
-
-        float _calc_dist(const pcl::PointXYZ &, const pcl::PointXYZ &);
+        void _calc_mean_dist(const pcl::PointCloud<pcl::PointXYZRGB>::Ptr);
 
     public:
         Localizer();
@@ -54,11 +46,11 @@ namespace mapping
 
         void init(ros::NodeHandle &);
 
-        void update(const pcl::PointCloud<pcl::PointXYZ>::Ptr,
-                    const pcl::PointCloud<pcl::PointXYZ>::Ptr);
+        void update(const pcl::PointCloud<pcl::PointXYZRGB>::Ptr,
+                    const pcl::PointCloud<pcl::PointXYZRGB>::Ptr);
 
-        void estimateTrans(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr,
-                           const pcl::PointCloud<pcl::PointXYZ>::ConstPtr,
+        void estimateTrans(const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr,
+                           const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr,
                            Eigen::MatrixXf &);
     };
 
@@ -72,30 +64,28 @@ namespace mapping
 
         void updateCloud();
 
-        pcl::PointCloud<pcl::PointXYZ>::Ptr globalCloud;
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr globalCloud;
     };
 
     class SLAMCore
     {
     private:
-        ros::Subscriber laserSub;
+        ros::Subscriber _laser_sub;
 
-        ros::Publisher mapPub;
+        ros::Publisher _pcl_pub;
 
-        ros::Publisher pclPub;
+        std::unique_ptr<Localizer> _localizer;
 
-        std::unique_ptr<Localizer> localizer;
-
-        std::shared_ptr<Mapper> mapper;
-
-        void laserCb(const sensor_msgs::LaserScanConstPtr);
-
-        void scanToPcl(const sensor_msgs::LaserScanConstPtr,
-                       const pcl::PointCloud<pcl::PointXYZ>::Ptr);
-
-        void publish_all();
+        std::unique_ptr<Mapper> _mapper;
 
         uint32_t __seqNum__ = 0;
+
+        void _laser_cb(const sensor_msgs::LaserScanConstPtr);
+
+        void _scan_to_pcl(const sensor_msgs::LaserScanConstPtr,
+                          const pcl::PointCloud<pcl::PointXYZRGB>::Ptr);
+
+        void _publish_all();
 
     public:
         SLAMCore(ros::NodeHandle &);
