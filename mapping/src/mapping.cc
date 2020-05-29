@@ -33,6 +33,7 @@ namespace mapping
         else
         {
             Eigen::MatrixXf _transform;
+            // this->_ndt(_new_cloud);
             estimateTrans(_new_cloud, _prev_cloud, _transform);
         }
 
@@ -51,28 +52,54 @@ namespace mapping
     {
     }
 
-    void Localizer::_ndt(const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr _src)
+    void Localizer::_ndt(const pcl::PointCloud<pcl::PointXYZRGB>::Ptr _src)
     {
         // subdivide
         // find boundary
         float _xlim[2] = {100, -100};
         float _ylim[2] = {100, -100};
-        for(auto _point:_src->points)
+        for (auto _point : _src->points)
         {
-            _xlim[0] = (_point.x < _xlim[0]) ? _point.x:_xlim[0];
-            _xlim[1] = (_point.x > _xlim[1]) ? _point.x:_xlim[1];
-            _ylim[0] = (_point.y < _xlim[0]) ? _point.y:_ylim[0];
-            _ylim[1] = (_point.y > _ylim[1]) ? _point.y:_ylim[1];   
+            _xlim[0] = (_point.x < _xlim[0]) ? _point.x : _xlim[0];
+            _xlim[1] = (_point.x > _xlim[1]) ? _point.x : _xlim[1];
+            _ylim[0] = (_point.y < _ylim[0]) ? _point.y : _ylim[0];
+            _ylim[1] = (_point.y > _ylim[1]) ? _point.y : _ylim[1];
         }
-        size_t _xgrids = (_xlim[1] - _xlim[0]) / NDT_GRID_SIZE;
-        size_t _ygrids = (_ylim[1] - _ylim[0]) / NDT_GRID_SIZE;
-        std::cout << _xgrids << " " << _ygrids << std::endl;
+
+        int _xgrids = (int)((_xlim[1] - _xlim[0]) / NDT_GRID_SIZE) + 1;
+        int _ygrids = (int)((_ylim[1] - _ylim[0]) / NDT_GRID_SIZE) + 1;
+
+        std::vector<std::vector<int>> _grids;
+
+        for (size_t i = 0; i < _src->points.size(); ++i)
+        {
+            auto _point = _src->points[i];
+            // associate points with grids
+            int _xg = (int)((_point.x - _xlim[0]) / NDT_GRID_SIZE);
+            int _yg = (int)((_point.y - _ylim[0]) / NDT_GRID_SIZE);
+            std::vector<int> _coor{_xg, _yg};
+
+            _grids.push_back(_coor);
+        }
+
+        std::vector<std::vector<int>> _occupied;
+        for (auto _grid = _grids.begin(); _grid != _grids.end(); ++_grid)
+        {
+            if (std::count(_occupied.begin(), _occupied.end(), *_grid))
+            {
+                continue;
+            }
+            if( std::count(_grid, _grids.end(), *_grid) > 3)
+            {
+                _occupied.push_back(*_grid);
+            }
+        }
     }
 
     void Localizer::_calc_mean_dist(const pcl::PointCloud<pcl::PointXYZRGB>::Ptr _pointcloud)
     {
         this->_mean_dist = 0;
-        for(auto _point:_pointcloud->points)
+        for (auto _point : _pointcloud->points)
         {
             _mean_dist += sqrtf(_point.x * _point.x + _point.y * _point.y);
         }
@@ -114,7 +141,7 @@ namespace mapping
         this->_localizer->update(_raw_cloud, this->_mapper->globalCloud);
 
         sensor_msgs::PointCloud2 _pcl_msg;
-        pcl::toROSMsg(*_raw_cloud, _pcl_msg);
+        pcl::toROSMsg(*this->_mapper->globalCloud, _pcl_msg);
         _pcl_msg.header = _raw_scan->header;
         _pcl_pub.publish(_pcl_msg);
     }
@@ -132,7 +159,7 @@ namespace mapping
         pcl::PointCloud<pcl::PointXYZRGB>::Ptr _raw(new pcl::PointCloud<pcl::PointXYZRGB>);
         for (float _range : _rawScan->ranges)
         {
-            if (_range > 50)
+            if (_range > 20)
             {
                 _curr_phi += _d_phi;
                 continue;

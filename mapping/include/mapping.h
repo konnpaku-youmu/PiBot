@@ -18,7 +18,21 @@
 namespace mapping
 {
 #define NDT_GRID_SIZE 1.0
-#define min 
+
+    template <typename T>
+    std::ostream &operator<<(std::ostream &os, const std::vector<T> &v)
+    {
+        os << "[";
+        for (int i = 0; i < v.size(); ++i)
+        {
+            os << v[i];
+            if (i != v.size() - 1)
+                os << ", ";
+        }
+        os << "]";
+        return os;
+    }
+
     class Odometry
     {
     };
@@ -35,7 +49,7 @@ namespace mapping
         void _align_icp(const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr,
                         const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr);
 
-        void _ndt(const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr);
+        void _ndt(const pcl::PointCloud<pcl::PointXYZRGB>::Ptr);
 
         void _calc_mean_dist(const pcl::PointCloud<pcl::PointXYZRGB>::Ptr);
 
