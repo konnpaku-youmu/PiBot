@@ -15,9 +15,12 @@
 #include <pcl/registration/ndt.h>
 #include <pcl/filters/voxel_grid.h>
 
+#include <opencv-3.3.1-dev/opencv2/opencv.hpp>
+
 namespace mapping
 {
 #define NDT_GRID_SIZE 1.0
+#define NDT_OVERLAP 0.5
 
     template <typename T>
     std::ostream &operator<<(std::ostream &os, const std::vector<T> &v)
@@ -40,6 +43,13 @@ namespace mapping
     class Localizer
     {
     private:
+        ros::NodeHandle _test_nh;
+
+        ros::Publisher _test_pcl_pub;
+
+        ros::Publisher _test_pose_pub;
+
+        ////////////////////////////////////
         geometry_msgs::PoseStamped initPose;
 
         geometry_msgs::PoseStamped currPose;
@@ -49,7 +59,7 @@ namespace mapping
         void _align_icp(const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr,
                         const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr);
 
-        void _ndt(const pcl::PointCloud<pcl::PointXYZRGB>::Ptr);
+        void _ndt_(const pcl::PointCloud<pcl::PointXYZRGB>::Ptr);
 
         void _calc_mean_dist(const pcl::PointCloud<pcl::PointXYZRGB>::Ptr);
 

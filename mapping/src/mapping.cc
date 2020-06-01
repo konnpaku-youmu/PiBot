@@ -14,6 +14,7 @@ namespace mapping
 
         // set robot's intial origin at world origin
         currPose = initPose;
+        currPose.header.frame_id = "laser";
 
         return;
     }
@@ -26,15 +27,22 @@ namespace mapping
             // initialize pointcloud for the first frame
             _prev_cloud->header = _new_cloud->header;
             _prev_cloud->points = _new_cloud->points;
-
-            // construct NDT
-            this->_ndt(_prev_cloud);
         }
         else
         {
             Eigen::MatrixXf _transform;
-            // this->_ndt(_new_cloud);
             estimateTrans(_new_cloud, _prev_cloud, _transform);
+            // std::cout << _transform << std::endl;
+            Eigen::Quaternionf _q(_transform.block<3,3>(0,0));
+            currPose.pose.orientation.w = _q.w();
+            currPose.pose.orientation.x = _q.x();
+            currPose.pose.orientation.y = _q.y();
+            currPose.pose.orientation.z = _q.z();
+
+            currPose.pose.position.x = _transform(0,3);
+            currPose.pose.position.y = _transform(1,3);
+
+            this->_test_pose_pub.publish(currPose);
         }
 
         _calc_mean_dist(_new_cloud);
@@ -45,14 +53,69 @@ namespace mapping
                                   const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr _prev,
                                   Eigen::MatrixXf &_T)
     {
+        pcl::ExtractIndices<pcl::PointXYZRGB> _map_clipper;
+        pcl::ExtractIndices<pcl::PointXYZRGB> _new_clipper;
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr _local_map(new pcl::PointCloud<pcl::PointXYZRGB>);
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr _local_laser_scan(new pcl::PointCloud<pcl::PointXYZRGB>);
+
+        _map_clipper.setInputCloud(_prev);
+        pcl::PointIndices _map_indices;
+        for (size_t i = 0; i < _prev->points.size(); ++i)
+        {
+            float _dist = sqrtf((_curr->points[i].x - this->currPose.pose.position.x) * (_curr->points[i].x - this->currPose.pose.position.x) +
+                                (_curr->points[i].y - this->currPose.pose.position.y) * (_curr->points[i].y - this->currPose.pose.position.y));
+            if (_dist > 1.5 * this->_mean_dist)
+            {
+                _map_indices.indices.push_back(i);
+            }
+        }
+        _map_clipper.setIndices(boost::make_shared<pcl::PointIndices>(_map_indices));
+        _map_clipper.setNegative(true);
+        _map_clipper.filter(*_local_map);
+
+        _new_clipper.setInputCloud(_curr);
+        pcl::PointIndices _new_indices;
+        for (size_t i = 0; i < _curr->points.size(); ++i)
+        {
+            float _dist = sqrtf(_curr->points[i].x * _curr->points[i].x + _curr->points[i].y * _curr->points[i].y);
+            if (_dist > this->_mean_dist)
+            {
+                _new_indices.indices.push_back(i);
+            }
+        }
+        _new_clipper.setIndices(boost::make_shared<pcl::PointIndices>(_new_indices));
+        _new_clipper.setNegative(true);
+        _new_clipper.filter(*_local_laser_scan);
+
+        // align local scan with local map
+        pcl::NormalDistributionsTransform<pcl::PointXYZRGB, pcl::PointXYZRGB> _ndt;
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr _ndt_output(new pcl::PointCloud<pcl::PointXYZRGB>);
+        _ndt.setTransformationEpsilon(0.01);
+        _ndt.setStepSize(0.05);
+        _ndt.setResolution(1);
+        _ndt.setMaximumIterations(35);
+
+        _ndt.setInputSource(_local_laser_scan);
+        _ndt.setInputTarget(_local_map);
+
+        Eigen::Matrix4f _initial_guess = Eigen::Matrix4f::Identity();
+        _ndt.align(*_ndt_output, _initial_guess);
+
+        if(_ndt.hasConverged())
+        {
+            _T = _ndt.getFinalTransformation();
+        }
+
+        return;
     }
 
     void Localizer::_align_icp(const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr _query,
                                const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr _train)
     {
+        return;
     }
 
-    void Localizer::_ndt(const pcl::PointCloud<pcl::PointXYZRGB>::Ptr _src)
+    void Localizer::_ndt_(const pcl::PointCloud<pcl::PointXYZRGB>::Ptr _src)
     {
         // subdivide
         // find boundary
@@ -66,34 +129,108 @@ namespace mapping
             _ylim[1] = (_point.y > _ylim[1]) ? _point.y : _ylim[1];
         }
 
-        int _xgrids = (int)((_xlim[1] - _xlim[0]) / NDT_GRID_SIZE) + 1;
-        int _ygrids = (int)((_ylim[1] - _ylim[0]) / NDT_GRID_SIZE) + 1;
+        int _xgrids = (int)((_xlim[1] - _xlim[0]) / ((1 - NDT_OVERLAP) * NDT_GRID_SIZE)) + 1;
+        int _ygrids = (int)((_ylim[1] - _ylim[0]) / ((1 - NDT_OVERLAP) * NDT_GRID_SIZE)) + 1;
 
-        std::vector<std::vector<int>> _grids;
+        // map measurements to grids
+        float _xstart = _xlim[0] - (1 - NDT_OVERLAP) * NDT_GRID_SIZE;
+        float _ystart = _ylim[0] - (1 - NDT_OVERLAP) * NDT_GRID_SIZE;
 
-        for (size_t i = 0; i < _src->points.size(); ++i)
+        std::vector<pcl::PointXYZRGB> _tmp_points_in_grids[_xgrids * _ygrids];
+
+        for (auto _point : _src->points)
         {
-            auto _point = _src->points[i];
-            // associate points with grids
-            int _xg = (int)((_point.x - _xlim[0]) / NDT_GRID_SIZE);
-            int _yg = (int)((_point.y - _ylim[0]) / NDT_GRID_SIZE);
-            std::vector<int> _coor{_xg, _yg};
+            int _gridx = (int)((_point.x - _xstart) / NDT_GRID_SIZE);
+            int _gridy = (int)((_point.y - _ystart) / NDT_GRID_SIZE);
 
-            _grids.push_back(_coor);
+            _tmp_points_in_grids[_gridy * _xgrids + _gridx].push_back(_point);
+            _tmp_points_in_grids[_gridy * _xgrids + _gridx + 1].push_back(_point);
+            _tmp_points_in_grids[(_gridy + 1) * _xgrids + _gridx].push_back(_point);
+            _tmp_points_in_grids[(_gridy + 1) * _xgrids + _gridx + 1].push_back(_point);
         }
+        // std::cout << _xstart << " " << _ystart << std::endl;
+        // std::cout << _tmp_points_in_grids[0] << std::endl;
 
-        std::vector<std::vector<int>> _occupied;
-        for (auto _grid = _grids.begin(); _grid != _grids.end(); ++_grid)
+        std::vector<std::pair<int, std::vector<pcl::PointXYZRGB>>> _points_in_grids;
+
+        for (int i = 0; i < _xgrids * _ygrids; ++i)
         {
-            if (std::count(_occupied.begin(), _occupied.end(), *_grid))
+            if (_tmp_points_in_grids[i].size() <= 3)
             {
                 continue;
             }
-            if( std::count(_grid, _grids.end(), *_grid) > 3)
+            _points_in_grids.push_back(std::make_pair(i, _tmp_points_in_grids[i]));
+            // std::cout << i << " " << _tmp_points_in_grids[i] << std::endl;
+        }
+
+        //construct NDT
+        std::vector<std::pair<int, std::pair<pcl::PointXYZRGB, Eigen::Matrix2d>>> _distri_grid;
+        // compute average and covariance
+        for (auto _grouped_points : _points_in_grids)
+        {
+            int _tmp_grid_idx = _grouped_points.first;
+            auto _tmp_point_lst = _grouped_points.second;
+            Eigen::Matrix2d _cov = Eigen::Matrix2d::Zero();
+            pcl::PointXYZRGB _sum_p, _aver_p;
+            // average
+            _sum_p.x = 0;
+            _sum_p.y = 0;
+            for (auto _point : _tmp_point_lst)
             {
-                _occupied.push_back(*_grid);
+                _sum_p.x += _point.x;
+                _sum_p.y += _point.y;
+            }
+            _aver_p.x = _sum_p.x / _tmp_point_lst.size();
+            _aver_p.y = _sum_p.y / _tmp_point_lst.size();
+
+            // cov
+            for (auto _point : _tmp_point_lst)
+            {
+                Eigen::Vector2d _pt;
+                _pt(0) = _point.x - _aver_p.x;
+                _pt(1) = _point.y - _aver_p.y;
+                _cov += _pt * _pt.transpose();
+            }
+            _cov /= (_tmp_point_lst.size() - 1);
+            // prevent singualrity
+            {
+                auto _eigenvalues = _cov.eigenvalues().real();
+                if (std::min(_eigenvalues(0), _eigenvalues(1)) <= 1e-3 * std::max(_eigenvalues(0), _eigenvalues(1)))
+                {
+                    continue;
+                }
+            }
+            std::pair<pcl::PointXYZRGB, Eigen::Matrix2d> _distribution(_aver_p, _cov);
+            _distri_grid.push_back(std::make_pair(_tmp_grid_idx, _distribution));
+        }
+
+        // visualize(optional)
+        cv::Mat _vis = cv::Mat::zeros(50 * _ygrids, 50 * _xgrids, CV_8UC1);
+        for (auto _grid : _distri_grid)
+        {
+            auto _grid_aver = _grid.second.first;
+            auto _grid_cov = _grid.second.second;
+            auto _grid_idx = _grid.first;
+
+            int _gx = _grid_idx % _xgrids;
+            int _gy = _grid_idx / _xgrids;
+            // std::cout << _gx << " " << _gy << std::endl;
+
+            for (size_t i = 0; i < 100; ++i)
+            {
+                for (size_t j = 0; j < 100; ++j)
+                {
+                    Eigen::Vector2d _de_aver;
+                    _de_aver(0) = 0.01 * i + _gx * NDT_GRID_SIZE - _grid_aver.x;
+                    _de_aver(1) = 0.01 * j + _gy * NDT_GRID_SIZE - _grid_aver.y;
+                    double _prob = std::exp(-0.5 * _de_aver.transpose() * _grid_cov * _de_aver);
+                    uint8_t _pixel_value = (uint8_t)(_prob * 255);
+                    _vis.at<uint8_t>(_gy * 50 + i, _gx * 50 + j) += _pixel_value;
+                }
             }
         }
+        cv::imshow("grid", _vis);
+        cv::waitKey(50);
     }
 
     void Localizer::_calc_mean_dist(const pcl::PointCloud<pcl::PointXYZRGB>::Ptr _pointcloud)
@@ -104,15 +241,21 @@ namespace mapping
             _mean_dist += sqrtf(_point.x * _point.x + _point.y * _point.y);
         }
         this->_mean_dist /= _pointcloud->points.size();
+        return;
     }
 
     void Localizer::init(ros::NodeHandle &nh)
     {
+        this->_test_nh = nh;
+        this->_test_pcl_pub = _test_nh.advertise<sensor_msgs::PointCloud2>("/test/pcl", 10);
+        this->_test_pose_pub = _test_nh.advertise<geometry_msgs::PoseStamped>("/test/pose", 10);
+        return;
     }
 
     Mapper::Mapper()
         : globalCloud(new pcl::PointCloud<pcl::PointXYZRGB>)
     {
+        return;
     }
 
     SLAMCore::SLAMCore(ros::NodeHandle &nh)
@@ -131,6 +274,8 @@ namespace mapping
             spinRate.sleep();
             __seqNum__++;
         }
+
+        return;
     }
 
     void SLAMCore::_laser_cb(const sensor_msgs::LaserScanConstPtr _raw_scan)
@@ -144,6 +289,8 @@ namespace mapping
         pcl::toROSMsg(*this->_mapper->globalCloud, _pcl_msg);
         _pcl_msg.header = _raw_scan->header;
         _pcl_pub.publish(_pcl_msg);
+
+        return;
     }
 
     void SLAMCore::_scan_to_pcl(const sensor_msgs::LaserScanConstPtr _rawScan,
@@ -179,12 +326,15 @@ namespace mapping
 
         pcl::VoxelGrid<pcl::PointXYZRGB> _filter;
         _filter.setInputCloud(_raw);
-        _filter.setLeafSize(0.1, 0.1, 0.1);
+        _filter.setLeafSize(0.05, 0.05, 0.1);
         _filter.filter(*_dstPcl);
+
+        return;
     }
 
     void SLAMCore::_publish_all()
     {
+        return;
     }
 
 } // namespace mapping
