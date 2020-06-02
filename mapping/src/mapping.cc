@@ -33,14 +33,19 @@ namespace mapping
             Eigen::MatrixXf _transform;
             estimateTrans(_new_cloud, _prev_cloud, _transform);
             // std::cout << _transform << std::endl;
-            Eigen::Quaternionf _q(_transform.block<3,3>(0,0));
-            currPose.pose.orientation.w = _q.w();
-            currPose.pose.orientation.x = _q.x();
-            currPose.pose.orientation.y = _q.y();
-            currPose.pose.orientation.z = _q.z();
 
-            currPose.pose.position.x = _transform(0,3);
-            currPose.pose.position.y = _transform(1,3);
+            pcl::PointCloud<pcl::PointXYZRGB>::Ptr _trans(new pcl::PointCloud<pcl::PointXYZRGB>);
+            pcl::transformPointCloud(*_new_cloud, *_trans, _transform);
+
+            for (auto _point : _prev_cloud->points)
+            {
+                _trans->points.push_back(_point);
+            }
+
+            pcl::VoxelGrid<pcl::PointXYZRGB> _filter;
+            _filter.setInputCloud(_trans);
+            _filter.setLeafSize(0.1, 0.1, 0.1);
+            _filter.filter(*_prev_cloud);
 
             this->_test_pose_pub.publish(currPose);
         }
@@ -57,6 +62,17 @@ namespace mapping
         pcl::ExtractIndices<pcl::PointXYZRGB> _new_clipper;
         pcl::PointCloud<pcl::PointXYZRGB>::Ptr _local_map(new pcl::PointCloud<pcl::PointXYZRGB>);
         pcl::PointCloud<pcl::PointXYZRGB>::Ptr _local_laser_scan(new pcl::PointCloud<pcl::PointXYZRGB>);
+        
+        // move current laser scan to current position
+        // pcl::PointCloud<pcl::PointXYZRGB>::Ptr _curr_trans(new pcl::PointCloud<pcl::PointXYZRGB>);
+        // Eigen::Matrix4f _curr_t = Eigen::Matrix4f::Identity();
+        // Eigen::Quaternionf _curr_r(this->currPose.pose.orientation.w,
+        //                            this->currPose.pose.orientation.x,
+        //                            this->currPose.pose.orientation.y,
+        //                            this->currPose.pose.orientation.z);
+        // _curr_t.block<3, 3>(0, 0) = _curr_r.toRotationMatrix();
+        // _curr_t(0, 3) = this->currPose.pose.position.x;
+        // _curr_t(1, 3) = this->currPose.pose.position.y;
 
         _map_clipper.setInputCloud(_prev);
         pcl::PointIndices _map_indices;
@@ -64,7 +80,7 @@ namespace mapping
         {
             float _dist = sqrtf((_curr->points[i].x - this->currPose.pose.position.x) * (_curr->points[i].x - this->currPose.pose.position.x) +
                                 (_curr->points[i].y - this->currPose.pose.position.y) * (_curr->points[i].y - this->currPose.pose.position.y));
-            if (_dist > 1.5 * this->_mean_dist)
+            if (_dist > this->_mean_dist)
             {
                 _map_indices.indices.push_back(i);
             }
@@ -101,9 +117,19 @@ namespace mapping
         Eigen::Matrix4f _initial_guess = Eigen::Matrix4f::Identity();
         _ndt.align(*_ndt_output, _initial_guess);
 
-        if(_ndt.hasConverged())
+        if (_ndt.hasConverged())
         {
             _T = _ndt.getFinalTransformation();
+            std::cout << _ndt.getFitnessScore() << std::endl;
+            // update pose
+            Eigen::Quaternionf _q(_T.block<3, 3>(0, 0));
+            currPose.pose.orientation.w = _q.w();
+            currPose.pose.orientation.x = _q.x();
+            currPose.pose.orientation.y = _q.y();
+            currPose.pose.orientation.z = _q.z();
+
+            currPose.pose.position.x = _T(0, 3);
+            currPose.pose.position.y = _T(1, 3);
         }
 
         return;
