@@ -3,7 +3,11 @@
 
 #include <ros/ros.h>
 #include <eigen3/Eigen/Eigen>
+#include <geometry_msgs/PoseStamped.h>
 #include <nav_msgs/OccupancyGrid.h>
+
+#include <opencv-3.3.1-dev/opencv2/opencv.hpp>
+#include <opencv-3.3.1-dev/opencv2/core/eigen.hpp>
 
 namespace hector_app
 {
@@ -14,9 +18,19 @@ namespace hector_app
         Eigen::Vector2i map_size; // (height, width)
 
         ////////////////////////////////
+
         Eigen::MatrixXi occupancy_data;
     };
     typedef std::vector<MapData> MapList;
+
+    struct NavigationGoal
+    {
+        Eigen::Vector2d position;
+        Eigen::Quaterniond orientation;
+
+        Eigen::Vector2d end_velocity;
+    };
+    typedef std::vector<NavigationGoal> NavGoalList;
 
     class MapLoader
     {
@@ -25,12 +39,12 @@ namespace hector_app
 
         ros::Subscriber _map_sub;
 
-        MapData _map;
+        std::shared_ptr<MapData> _map;
 
         void _map_cb(const nav_msgs::OccupancyGridConstPtr);
 
     public:
-        MapLoader(ros::NodeHandle &);
+        MapLoader(ros::NodeHandle &, MapData &);
 
         ~MapLoader() { return; }
     };
@@ -38,23 +52,35 @@ namespace hector_app
     class Navigator
     {
     private:
+        ros::NodeHandle _nh;
+
+        ros::Subscriber _nav_goal_sub;
+
+        std::shared_ptr<MapData> _map;
+
+        NavigationGoal _goal;
+
+        void _nav_goal_cb(const geometry_msgs::PoseStampedConstPtr);
+
     public:
-        Navigator() { return; }
+        Navigator(ros::NodeHandle &, MapData &);
 
         ~Navigator() { return; }
+
+        void updateRoutePlanning();
     };
 
     class App
     {
     private:
-        std::unique_ptr<MapLoader> _map;
+        std::unique_ptr<MapLoader> _map_loader;
 
         std::unique_ptr<Navigator> _nav;
 
+        MapData _nav_map;
+
     public:
-        App(ros::NodeHandle &_nh)
-            : _map(std::make_unique<MapLoader>(_nh)),
-              _nav(std::make_unique<Navigator>()) {}
+        App(ros::NodeHandle &);
 
         ~App() { return; }
     };
