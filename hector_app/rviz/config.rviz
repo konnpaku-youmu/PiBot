@@ -8,7 +8,6 @@ Panels:
         - /Grid1
         - /Rear1
         - /LaserScan1
-        - /LaserScan1/Status1
         - /Map1
         - /PoseWithCovariance1
         - /PoseWithCovariance1/Covariance1
@@ -172,6 +171,14 @@ Visualization Manager:
       Topic: /poseupdate
       Unreliable: false
       Value: true
+    - Class: rviz/Marker
+      Enabled: true
+      Marker Topic: /app/path
+      Name: Marker
+      Namespaces:
+        "": true
+      Queue Size: 100
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -192,25 +199,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 17.677515
+      Distance: 8.01425648
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.0599999987
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -0.3292678
-        Y: -0.494620472
-        Z: -1.09076762
+        X: 2.06180978
+        Y: -0.194242552
+        Z: -0.264545172
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.0500000007
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.00999999978
-      Pitch: 0.504797339
+      Pitch: 1.05979693
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 4.01940393
+      Yaw: 4.17940712
     Saved: ~
 Window Geometry:
   Displays:

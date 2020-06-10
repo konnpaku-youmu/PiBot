@@ -6,13 +6,14 @@ namespace ps3
     {
         _joy_sub = nh.subscribe("/joy", 1, &Joystick::_js_input_cb, this);
         _twist_pub = nh.advertise<geometry_msgs::Twist>("/robot/cmd_vel", 1);
+        _button_pub = nh.advertise<std_msgs::Int8MultiArray>("/robot/buttons", 1);
         _start_rp_motor_cli = nh.serviceClient<std_srvs::Empty>("/robot/start_motor");
         _stop_rp_motor_cli = nh.serviceClient<std_srvs::Empty>("/robot/stop_motor");
 
         ros::Rate loop(20);
         while (ros::ok())
         {
-            _js_ascii_art();
+            // _js_ascii_art();
             this->_cmd_pub();
             ros::spinOnce();
             loop.sleep();
@@ -21,8 +22,7 @@ namespace ps3
 
     void Joystick::_js_input_cb(const sensor_msgs::JoyConstPtr _raw_input_ptr)
     {
-        // _cmd_out.header = _raw_input_ptr->header;
-
+        // wheel control
         // read joy input
         float _linear_velocity = _raw_input_ptr->axes[1];
         float _angular_velocity = _raw_input_ptr->axes[3];
@@ -55,6 +55,12 @@ namespace ps3
             _rp_motor_cmd = -1;
         }
 
+        // function control
+        for (auto _button : _raw_input_ptr->buttons)
+        {
+            _buttons_input.push_back((int8_t)_button);
+        }
+
         return;
     }
 
@@ -62,6 +68,14 @@ namespace ps3
     {
         // main motors controller
         _twist_pub.publish(_cmd_out);
+
+        std_msgs::Int8MultiArray _buttons_msg;
+        std_msgs::MultiArrayDimension _tmp;
+        // _tmp.size = 15;
+        _buttons_msg.layout.data_offset = 0;
+        _buttons_msg.layout.dim.push_back(_tmp);
+        _buttons_msg.data = this->_buttons_input;
+        this->_button_pub.publish(_buttons_msg);
 
         // rplidar motor controller
         std_srvs::Empty _srv;
@@ -75,6 +89,8 @@ namespace ps3
             _start_rp_motor_cli.call(_srv);
             _rp_motor_status = !_rp_motor_status;
         }
+
+        _buttons_input.clear();
 
         return;
     }
@@ -169,7 +185,6 @@ namespace ps3
         std::cout << "\033[1;32m";
         std::cout << "\033[" << (_cmd_out.angular.z == 0) + 1 << ";32m";
         std::cout << "Turning" << std::endl;
-        
 
         std::cout << "\033[0;33m" << std::endl;
         std::cout << "//////////////////////PS3 CONTROLLER//////////////////////" << std::endl;
