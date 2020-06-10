@@ -5,6 +5,7 @@
 #include <ros/ros.h>
 #include <geometry_msgs/Twist.h>
 #include <geometry_msgs/PoseStamped.h>
+#include <visualization_msgs/Marker.h>
 
 namespace robot_control
 {
@@ -15,7 +16,13 @@ namespace robot_control
 
         ros::Publisher _control_pub;
 
-        Eigen::Vector3d _dst = Eigen::Vector3d(1,0,0);
+        ros::Publisher _traj_pub;
+
+        Eigen::Vector3d _dst = Eigen::Vector3d(2,0,0);
+
+        std::vector<Eigen::Vector3d> _route;
+
+        visualization_msgs::Marker _traj;
 
         void _pos_callback(const geometry_msgs::PoseStampedConstPtr);
 

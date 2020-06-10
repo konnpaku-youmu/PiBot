@@ -8,6 +8,6 @@
         <param name="autorepeat_rate" value="20" />
     </node>
 
-    <node pkg="ps3_con" type="ps3_con_node" name="ps3_con_node" output="screen"/>
+    <!-- <node pkg="ps3_con" type="ps3_con_node" name="ps3_con_node" output="screen"/> -->
     <node pkg="main_controller" type="main_controller_node" name="main_controller_node" output="screen" launch-prefix="valgrind"/>
 </launch>
