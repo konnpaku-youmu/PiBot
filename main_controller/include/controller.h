@@ -18,11 +18,13 @@ namespace robot_control
 
         ros::Publisher _traj_pub;
 
-        Eigen::Vector3d _dst = Eigen::Vector3d(2,0,0);
+        ros::Publisher _route_pub;
 
-        std::vector<Eigen::Vector3d> _route;
+        std::list<Eigen::Vector3d> _route;
 
         visualization_msgs::Marker _traj;
+
+        visualization_msgs::Marker _rue;
 
         void _pos_callback(const geometry_msgs::PoseStampedConstPtr);
 
