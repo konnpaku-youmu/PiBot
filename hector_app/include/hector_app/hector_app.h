@@ -3,17 +3,115 @@
 
 #include <ros/ros.h>
 #include <eigen3/Eigen/Eigen>
-#include <std_msgs/Int8MultiArray.h>
+#include <sensor_msgs/Joy.h>
 #include <geometry_msgs/PoseStamped.h>
+#include <geometry_msgs/Twist.h>
 #include <nav_msgs/OccupancyGrid.h>
 #include <visualization_msgs/Marker.h>
 
 namespace hector_app
 {
+    enum CONTROL_FLAG
+    {
+        MANUAL,
+        TASK,
+        EXPLORE,
+        IDLE
+    };
+
+    struct JoystickInput
+    {
+        bool L1;
+        bool R1;
+
+        bool left;
+        bool right;
+        bool up;
+        bool down;
+
+        bool select;
+        bool start;
+        bool ps;
+
+        bool square;
+        bool triangle;
+        bool circle;
+        bool cross;
+
+        double L2;
+        double R2;
+
+        double L_stick_x;
+        double L_stick_y;
+        double R_stick_x;
+        double R_stick_y;
+
+        JoystickInput()
+        {
+            L1 = R1 = left = right = up = down = select = start =
+                ps = square = triangle = circle = cross = false;
+
+            L2 = R2 = L_stick_x = R_stick_x = L_stick_y = R_stick_y = 0.0;
+        }
+    };
+
+    class MapManager
+    {
+    private:
+        /* data */
+    public:
+        MapManager() {}
+
+        ~MapManager() { return; }
+    };
+
+    class RouteManager
+    {
+    private:
+        ros::NodeHandlePtr _nh;
+
+    public:
+        RouteManager();
+
+        ~RouteManager() { return; }
+
+        void setRouteManager(ros::NodeHandle &);
+    };
+
+    class VehicleController
+    {
+    private:
+        ros::NodeHandlePtr _nh;
+
+        ros::Subscriber _vehicle_pose_sub;
+
+        ros::Subscriber _joy_command_sub;
+
+        JoystickInput _ps3_input;
+
+        CONTROL_FLAG _FLAG;
+
+        void _slam_pose_cb(const geometry_msgs::PoseStampedConstPtr);
+
+        void _joy_command_cb(const sensor_msgs::JoyConstPtr);
+
+        void _use_remote_control();
+
+    public:
+        VehicleController();
+
+        ~VehicleController() { return; }
+
+        void setController(ros::NodeHandle &);
+    };
+
     class App
     {
     private:
-        
+        std::unique_ptr<VehicleController> _vc;
+
+        std::unique_ptr<RouteManager> _rm;
+
     public:
         App(ros::NodeHandle &);
 
