@@ -5,6 +5,7 @@
 #include <eigen3/Eigen/Eigen>
 #include <sensor_msgs/Joy.h>
 #include <geometry_msgs/PoseStamped.h>
+#include <geometry_msgs/PoseArray.h>
 #include <geometry_msgs/Twist.h>
 #include <nav_msgs/OccupancyGrid.h>
 #include <visualization_msgs/Marker.h>
@@ -16,6 +17,7 @@ namespace hector_app
         MANUAL,
         TASK,
         EXPLORE,
+        PATH_RECORD,
         IDLE
     };
 
@@ -70,6 +72,14 @@ namespace hector_app
     private:
         ros::NodeHandlePtr _nh;
 
+        ros::Subscriber _pose_recorder_sub;
+
+        ros::Publisher _request_pub;
+
+        void _record_new_route(const geometry_msgs::PoseStampedConstPtr);
+
+        void _load_route_file();
+
     public:
         RouteManager();
 
@@ -87,6 +97,10 @@ namespace hector_app
 
         ros::Subscriber _joy_command_sub;
 
+        ros::Publisher _remote_cmd_pub;
+
+        ros::Publisher _record_pose_relay;
+
         JoystickInput _ps3_input;
 
         CONTROL_FLAG _FLAG;
@@ -96,6 +110,10 @@ namespace hector_app
         void _joy_command_cb(const sensor_msgs::JoyConstPtr);
 
         void _use_remote_control();
+
+        void _record_curr_path(const geometry_msgs::PoseStampedConstPtr);
+
+        void _run_task();
 
     public:
         VehicleController();

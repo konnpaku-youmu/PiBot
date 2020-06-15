@@ -95,13 +95,10 @@ namespace robot_control
         double _kp_linear = 0.32;
 
         geometry_msgs::Twist _output;
+        _output.linear.x = (direction > 0) ? 0.15 : -0.15;
+        _output.angular.z = _kp_angular * _angular_e;
         if (fabs(_linear_e) > 0.15)
         {
-            _output.linear.x = (direction > 0) ? 0.15 : -0.15;
-
-            // std::cout << _linear_e << std::endl;
-            _output.angular.z = _kp_angular * _angular_e;
-            // std::cout << _output.angular.z << std::endl;
         }
         else
         {
