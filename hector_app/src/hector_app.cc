@@ -31,6 +31,16 @@ namespace hector_app
         this->_request_pub = this->_nh->advertise<geometry_msgs::PoseArray>("/task", 1);
     }
 
+    void RouteManager::_record_new_route(const geometry_msgs::PoseStampedConstPtr _pose_ptr)
+    {
+
+    }
+
+    void RouteManager::_load_route_file()
+    {
+
+    }
+
     VehicleController::VehicleController()
     {
     }
@@ -48,8 +58,9 @@ namespace hector_app
         // setup joystick publisher
         this->_remote_cmd_pub = this->_nh->advertise<geometry_msgs::Twist>("/robot/cmd_vel", 1);
 
+        this->_record_pose_relay = this->_nh->advertise<geometry_msgs::PoseStamped>("/pose_record", 1);
         // subscribe to route manager
-
+        this->_task_route_sub = this->_nh->subscribe("/task", 1, &VehicleController::_task_route_cb, this);
 
         return;
     }
@@ -124,11 +135,19 @@ namespace hector_app
 
     void VehicleController::_record_curr_path(const geometry_msgs::PoseStampedConstPtr _curr_pose_ptr)
     {
-        
+        // bypass current pose to trigger RouteManager::record
+        this->_record_pose_relay.publish(_curr_pose_ptr);
+
         return;
+    }
+
+    void VehicleController::_task_route_cb(const geometry_msgs::PoseArrayConstPtr _route_ptr)
+    {
+        
     }
 
     void VehicleController::_run_task()
     {
+
     }
 } // namespace hector_app

@@ -97,6 +97,8 @@ namespace hector_app
 
         ros::Subscriber _joy_command_sub;
 
+        ros::Subscriber _task_route_sub;
+
         ros::Publisher _remote_cmd_pub;
 
         ros::Publisher _record_pose_relay;
@@ -112,6 +114,8 @@ namespace hector_app
         void _use_remote_control();
 
         void _record_curr_path(const geometry_msgs::PoseStampedConstPtr);
+
+        void _task_route_cb(const geometry_msgs::PoseArrayConstPtr);
 
         void _run_task();
 
