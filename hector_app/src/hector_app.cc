@@ -28,12 +28,34 @@ namespace hector_app
         this->_nh = boost::make_shared<ros::NodeHandle>(_nodehandle);
 
         this->_pose_recorder_sub = this->_nh->subscribe("/pose_record", 1, &RouteManager::_record_new_route, this);
-        this->_request_pub = this->_nh->advertise<geometry_msgs::PoseArray>("/task", 1);
+        this->_request_sub = this->_nh->subscribe("/route_request", 1, &RouteManager::_request_listener, this);
+        this->_route_dispenser = this->_nh->advertise<geometry_msgs::PoseArray>("/task", 1);
+
+        _new_route_container.poses.clear();
     }
 
     void RouteManager::_record_new_route(const geometry_msgs::PoseStampedConstPtr _pose_ptr)
     {
+        this->_new_route_container.header = _pose_ptr->header;
+        this->_new_route_container.poses.push_back(_pose_ptr->pose);
+    }
 
+    void RouteManager::_request_listener(const std_msgs::Int16ConstPtr _request_ptr)
+    {
+        int __vehicle_id__ = (_request_ptr->data >> 8) && 0x00ff;
+        int __route_id__ = _request_ptr->data && 0x00ff;
+
+        try
+        {
+            geometry_msgs::PoseArray __requested_route__ = this->_network[__route_id__];
+            __requested_route__.header.stamp = ros::Time::now();
+            this->_route_dispenser.publish(__requested_route__);
+        }
+        catch(const std::exception& e)
+        {
+            std::cerr << e.what() << '\n';
+        }
+        
     }
 
     void RouteManager::_load_route_file()
@@ -58,9 +80,12 @@ namespace hector_app
         // setup joystick publisher
         this->_remote_cmd_pub = this->_nh->advertise<geometry_msgs::Twist>("/robot/cmd_vel", 1);
 
+        // link to
         this->_record_pose_relay = this->_nh->advertise<geometry_msgs::PoseStamped>("/pose_record", 1);
-        // subscribe to route manager
         this->_task_route_sub = this->_nh->subscribe("/task", 1, &VehicleController::_task_route_cb, this);
+        this->_route_request_pub = this->_nh->advertise<std_msgs::Int16>("/route_request", 1);
+        
+        this->_curr_task_route.poses.clear();
 
         return;
     }
@@ -89,7 +114,7 @@ namespace hector_app
         }
         else if (this->_ps3_input.square)
         {
-            this->_FLAG = EXPLORE;
+            this->_FLAG = PATH_RECORD;
         }
         else if (this->_ps3_input.cross)
         {
@@ -102,7 +127,6 @@ namespace hector_app
         switch (this->_FLAG)
         {
         case MANUAL:
-            std::cout << "Controlled by joystick" << std::endl;
             this->_use_remote_control();
             break;
         case TASK:
@@ -135,19 +159,29 @@ namespace hector_app
 
     void VehicleController::_record_curr_path(const geometry_msgs::PoseStampedConstPtr _curr_pose_ptr)
     {
+        this->_use_remote_control();
         // bypass current pose to trigger RouteManager::record
         this->_record_pose_relay.publish(_curr_pose_ptr);
-
         return;
     }
 
     void VehicleController::_task_route_cb(const geometry_msgs::PoseArrayConstPtr _route_ptr)
     {
-        
+        this->_curr_task_route = *_route_ptr;
     }
 
     void VehicleController::_run_task()
     {
+        // request route
+        this->_route_request_pub.publish(0x0000);
 
+        try
+        {
+            /* code */
+        }
+        catch(const std::exception& e)
+        {
+            std::cerr << e.what() << '\n';
+        }
     }
 } // namespace hector_app

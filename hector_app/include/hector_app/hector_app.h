@@ -3,6 +3,7 @@
 
 #include <ros/ros.h>
 #include <eigen3/Eigen/Eigen>
+#include <std_msgs/Int16.h>
 #include <sensor_msgs/Joy.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/PoseArray.h>
@@ -12,6 +13,8 @@
 
 namespace hector_app
 {
+    typedef std::vector<geometry_msgs::PoseArray> RouteNetwork;
+
     enum CONTROL_FLAG
     {
         MANUAL,
@@ -74,10 +77,18 @@ namespace hector_app
 
         ros::Subscriber _pose_recorder_sub;
 
-        ros::Publisher _request_pub;
+        ros::Subscriber _request_sub;
+
+        ros::Publisher _route_dispenser;
+
+        geometry_msgs::PoseArray _new_route_container;
+
+        RouteNetwork _network;
 
         void _record_new_route(const geometry_msgs::PoseStampedConstPtr);
 
+        void _request_listener(const std_msgs::Int16ConstPtr);
+        
         void _load_route_file();
 
     public:
@@ -103,7 +114,11 @@ namespace hector_app
 
         ros::Publisher _record_pose_relay;
 
+        ros::Publisher _route_request_pub;
+
         JoystickInput _ps3_input;
+
+        geometry_msgs::PoseArray _curr_task_route;
 
         CONTROL_FLAG _FLAG;
 
