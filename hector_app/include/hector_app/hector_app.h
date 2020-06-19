@@ -14,6 +14,8 @@
 
 namespace hector_app
 {
+    #define MAP_RES 0.05
+
     typedef std::vector<geometry_msgs::PoseArray> RouteNetwork;
 
     enum CONTROL_FLAG
@@ -96,7 +98,7 @@ namespace hector_app
 
         RouteNetwork _network;
 
-        const std::string _DEFAULT_ROUTE_PATH{"/home/hcrd/PiBot/utils/lane.csv"};
+        const std::string _DEFAULT_ROUTE_PATH{"/home/hcrd/PiBot/utils/lane_marker/lane.csv"};
 
         void _record_new_route(const geometry_msgs::PoseStampedConstPtr);
 
@@ -135,6 +137,7 @@ namespace hector_app
 
         CONTROL_FLAG _FLAG;
 
+        
         void _slam_pose_cb(const geometry_msgs::PoseStampedConstPtr);
 
         void _joy_command_cb(const sensor_msgs::JoyConstPtr);

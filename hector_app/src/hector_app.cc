@@ -33,6 +33,7 @@ namespace hector_app
 
         this->_R_FLAG = START;
         this->_load_route_file();
+
         this->_new_route_container.poses.clear();
     }
 
@@ -46,7 +47,7 @@ namespace hector_app
             std::cout << "Recording" << std::endl;
             this->_new_route_container.header = _pose_ptr->header;
             this->_new_route_container.poses.push_back(_pose_ptr->pose);
-            if(_pose_ptr->pose.orientation.w == 100 && _pose_ptr->pose.orientation.x == -100)
+            if (_pose_ptr->pose.orientation.w == 100 && _pose_ptr->pose.orientation.x == -100)
             {
                 this->_R_FLAG = STOP;
             }
@@ -73,6 +74,7 @@ namespace hector_app
             geometry_msgs::PoseArray __requested_route__ = this->_network[__route_id__];
             __requested_route__.header.stamp = ros::Time::now();
             this->_route_dispenser.publish(__requested_route__);
+            std::cout << "route published, length: " << __requested_route__.poses.size() << std::endl;
         }
         catch (const std::exception &e)
         {
@@ -83,20 +85,32 @@ namespace hector_app
     void RouteManager::_load_route_file()
     {
         std::ifstream __lane_csv__(_DEFAULT_ROUTE_PATH);
-        std::cout << _DEFAULT_ROUTE_PATH << std::endl;
+        geometry_msgs::PoseArray __route_in_file__;
+
         try
         {
             std::string __coord__;
-            while(std::getline(__lane_csv__, __coord__))
+            while (std::getline(__lane_csv__, __coord__))
             {
-                std::cout << __coord__ << std::endl;
+                geometry_msgs::Pose __waypoint__;
+
+                std::vector<std::string> __u_v__;
+                std::string __split_by_comma__;
+                while (std::getline(std::stringstream(__coord__), __split_by_comma__, ','))
+                {
+                    __u_v__.push_back(__split_by_comma__);
+                }
+
+                __waypoint__.position.x = std::stoi(__u_v__[0]) * MAP_RES;
+                __waypoint__.position.y = std::stoi(__u_v__[1]) * MAP_RES;
+
+                __route_in_file__.poses.push_back(__waypoint__);
             }
         }
-        catch(const std::exception& e)
+        catch (const std::exception &e)
         {
             std::cerr << e.what() << '\n';
         }
-        
     }
 
     VehicleController::VehicleController()
@@ -128,6 +142,7 @@ namespace hector_app
 
     void VehicleController::_joy_command_cb(const sensor_msgs::JoyConstPtr _joy_ptr)
     {
+        // RC
         this->_ps3_input.cross = _joy_ptr->buttons[0];
         this->_ps3_input.circle = _joy_ptr->buttons[1];
         this->_ps3_input.triangle = _joy_ptr->buttons[2];
@@ -167,6 +182,7 @@ namespace hector_app
             this->_use_remote_control();
             break;
         case TASK:
+            this->_run_task();
             break;
         case PATH_RECORD:
             this->_record_curr_path(_pose_ptr);
@@ -210,9 +226,17 @@ namespace hector_app
     void VehicleController::_run_task()
     {
         // request route
-        std_msgs::Int16 __route_request__;
-        __route_request__.data = 0x0000;
-        this->_route_request_pub.publish(__route_request__);
+
+        if (_curr_task_route.poses.size() == 0)
+        {
+            std_msgs::Int16 __route_request__;
+            __route_request__.data = 0x0000;
+            this->_route_request_pub.publish(__route_request__);
+            std::cout << "Request task" << std::endl;
+        }
+
+        std::cout << "running" << std::endl;
+
         try
         {
         }
