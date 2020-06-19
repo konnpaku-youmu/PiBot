@@ -2,6 +2,7 @@
 #define HECTOR_APP_H
 
 #include <ros/ros.h>
+#include <fstream>
 #include <eigen3/Eigen/Eigen>
 #include <std_msgs/Int16.h>
 #include <sensor_msgs/Joy.h>
@@ -22,6 +23,13 @@ namespace hector_app
         EXPLORE,
         PATH_RECORD,
         IDLE
+    };
+
+    enum RECORD_FLAG
+    {
+        START,
+        REC,
+        STOP
     };
 
     struct JoystickInput
@@ -64,6 +72,7 @@ namespace hector_app
     {
     private:
         /* data */
+
     public:
         MapManager() {}
 
@@ -81,9 +90,13 @@ namespace hector_app
 
         ros::Publisher _route_dispenser;
 
+        RECORD_FLAG _R_FLAG;
+
         geometry_msgs::PoseArray _new_route_container;
 
         RouteNetwork _network;
+
+        const std::string _DEFAULT_ROUTE_PATH{"/home/hcrd/PiBot/utils/lane.csv"};
 
         void _record_new_route(const geometry_msgs::PoseStampedConstPtr);
 

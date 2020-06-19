@@ -8,6 +8,6 @@
         <param name="autorepeat_rate" value="20" />
     </node>
 
-    <!-- <node pkg="rviz" type="rviz" name="rviz" args="-d $(find hector_app)/rviz/config.rviz"/> -->
-    <node pkg="hector_app" type="hector_app_node" name="hector_app_node" output="screen" launch-prefix="valgrind -v"/>
+    <node pkg="rviz" type="rviz" name="rviz" args="-d $(find hector_app)/rviz/config.rviz"/>
+    <node pkg="hector_app" type="hector_app_node" name="hector_app_node" output="screen"/>
 </launch>

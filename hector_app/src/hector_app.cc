@@ -31,13 +31,36 @@ namespace hector_app
         this->_request_sub = this->_nh->subscribe("/route_request", 1, &RouteManager::_request_listener, this);
         this->_route_dispenser = this->_nh->advertise<geometry_msgs::PoseArray>("/task", 1);
 
-        _new_route_container.poses.clear();
+        this->_R_FLAG = START;
+        this->_load_route_file();
+        this->_new_route_container.poses.clear();
     }
 
     void RouteManager::_record_new_route(const geometry_msgs::PoseStampedConstPtr _pose_ptr)
     {
-        this->_new_route_container.header = _pose_ptr->header;
-        this->_new_route_container.poses.push_back(_pose_ptr->pose);
+        switch (this->_R_FLAG)
+        {
+        case START:
+            this->_R_FLAG = REC;
+        case REC:
+            std::cout << "Recording" << std::endl;
+            this->_new_route_container.header = _pose_ptr->header;
+            this->_new_route_container.poses.push_back(_pose_ptr->pose);
+            if(_pose_ptr->pose.orientation.w == 100 && _pose_ptr->pose.orientation.x == -100)
+            {
+                this->_R_FLAG = STOP;
+            }
+            break;
+        case STOP:
+            this->_network.push_back(this->_new_route_container);
+            this->_new_route_container.poses.clear();
+            this->_R_FLAG = START;
+            break;
+        default:
+            break;
+        }
+
+        return;
     }
 
     void RouteManager::_request_listener(const std_msgs::Int16ConstPtr _request_ptr)
@@ -51,16 +74,29 @@ namespace hector_app
             __requested_route__.header.stamp = ros::Time::now();
             this->_route_dispenser.publish(__requested_route__);
         }
+        catch (const std::exception &e)
+        {
+            std::cerr << e.what() << '\n';
+        }
+    }
+
+    void RouteManager::_load_route_file()
+    {
+        std::ifstream __lane_csv__(_DEFAULT_ROUTE_PATH);
+        std::cout << _DEFAULT_ROUTE_PATH << std::endl;
+        try
+        {
+            std::string __coord__;
+            while(std::getline(__lane_csv__, __coord__))
+            {
+                std::cout << __coord__ << std::endl;
+            }
+        }
         catch(const std::exception& e)
         {
             std::cerr << e.what() << '\n';
         }
         
-    }
-
-    void RouteManager::_load_route_file()
-    {
-
     }
 
     VehicleController::VehicleController()
@@ -84,7 +120,7 @@ namespace hector_app
         this->_record_pose_relay = this->_nh->advertise<geometry_msgs::PoseStamped>("/pose_record", 1);
         this->_task_route_sub = this->_nh->subscribe("/task", 1, &VehicleController::_task_route_cb, this);
         this->_route_request_pub = this->_nh->advertise<std_msgs::Int16>("/route_request", 1);
-        
+
         this->_curr_task_route.poses.clear();
 
         return;
@@ -127,6 +163,7 @@ namespace hector_app
         switch (this->_FLAG)
         {
         case MANUAL:
+            std::cout << "Switch to Manual Control" << std::endl;
             this->_use_remote_control();
             break;
         case TASK:
@@ -173,13 +210,13 @@ namespace hector_app
     void VehicleController::_run_task()
     {
         // request route
-        this->_route_request_pub.publish(0x0000);
-
+        std_msgs::Int16 __route_request__;
+        __route_request__.data = 0x0000;
+        this->_route_request_pub.publish(__route_request__);
         try
         {
-            /* code */
         }
-        catch(const std::exception& e)
+        catch (const std::exception &e)
         {
             std::cerr << e.what() << '\n';
         }
