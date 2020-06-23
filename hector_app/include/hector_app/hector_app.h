@@ -12,11 +12,20 @@
 #include <nav_msgs/OccupancyGrid.h>
 #include <visualization_msgs/Marker.h>
 
+#include <opencv2/opencv.hpp>
+
 namespace hector_app
 {
-    #define MAP_RES 0.05
+#define MAP_RES 0.05
+#define MAP_SIZE 768
 
     typedef std::vector<geometry_msgs::PoseArray> RouteNetwork;
+
+    template <typename _T, typename _Tp>
+    double _dist(const _T _p1, const _Tp _p2)
+    {
+        return std::sqrt(std::pow(_p2.x - _p1.x, 2) + std::pow(_p2.y - _p1.y, 2));
+    }
 
     enum CONTROL_FLAG
     {
@@ -24,6 +33,7 @@ namespace hector_app
         TASK,
         EXPLORE,
         PATH_RECORD,
+        MAP_RECORD,
         IDLE
     };
 
@@ -73,12 +83,24 @@ namespace hector_app
     class MapManager
     {
     private:
-        /* data */
+        ros::NodeHandlePtr _nh;
+
+        ros::Subscriber _map_data_sub;
+
+        ros::Subscriber _map_cmd_sub;
+
+        nav_msgs::OccupancyGrid _map;
+
+        void _map_cb(const nav_msgs::OccupancyGridConstPtr);
+
+        void _save_map(const std_msgs::Int16ConstPtr);
 
     public:
         MapManager() {}
 
         ~MapManager() { return; }
+
+        void setMapManager(ros::NodeHandle &);
     };
 
     class RouteManager
@@ -103,7 +125,7 @@ namespace hector_app
         void _record_new_route(const geometry_msgs::PoseStampedConstPtr);
 
         void _request_listener(const std_msgs::Int16ConstPtr);
-        
+
         void _load_route_file();
 
     public:
@@ -127,6 +149,8 @@ namespace hector_app
 
         ros::Publisher _remote_cmd_pub;
 
+        ros::Publisher _map_ctrl_pub;
+
         ros::Publisher _record_pose_relay;
 
         ros::Publisher _route_request_pub;
@@ -137,7 +161,6 @@ namespace hector_app
 
         CONTROL_FLAG _FLAG;
 
-        
         void _slam_pose_cb(const geometry_msgs::PoseStampedConstPtr);
 
         void _joy_command_cb(const sensor_msgs::JoyConstPtr);
@@ -146,9 +169,11 @@ namespace hector_app
 
         void _record_curr_path(const geometry_msgs::PoseStampedConstPtr);
 
+        void _draw_map();
+
         void _task_route_cb(const geometry_msgs::PoseArrayConstPtr);
 
-        void _run_task();
+        void _run_task(const geometry_msgs::PoseStampedConstPtr);
 
     public:
         VehicleController();
@@ -164,6 +189,8 @@ namespace hector_app
         std::unique_ptr<VehicleController> _vc;
 
         std::unique_ptr<RouteManager> _rm;
+
+        std::unique_ptr<MapManager> _mm;
 
     public:
         App(ros::NodeHandle &);
