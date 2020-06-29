@@ -37,6 +37,7 @@ namespace hector_app
         while (ros::ok())
         {
             ros::spinOnce();
+
             this->_rm->refreshRouteFile();
 
             __loop__.sleep();
@@ -213,8 +214,6 @@ namespace hector_app
                     __waypoint__.position.x = (_u - MAP_SIZE / 2) * MAP_RES;
                     __waypoint__.position.y = (MAP_SIZE / 2 - _v) * MAP_RES;
 
-                    // std::cout << '(' << __waypoint__.position.x << ", " << __waypoint__.position.y << ')' << std::endl;
-
                     __route_in_file__.poses.push_back(__waypoint__);
                 }
 
@@ -259,12 +258,12 @@ namespace hector_app
 
         // link to map manager
         this->_map_ctrl_pub = this->_nh->advertise<std_msgs::Int16>("/map_cmd", 1);
-        
+
         // link to route manager
         this->_record_pose_relay = this->_nh->advertise<geometry_msgs::PoseStamped>("/pose_record", 1);
         this->_task_route_sub = this->_nh->subscribe("/task", 1, &VehicleController::_task_route_cb, this);
         this->_route_request_pub = this->_nh->advertise<std_msgs::Int16>("/route_request", 1);
-        
+
         // visualization publisher
         this->_route_vis_pub = this->_nh->advertise<visualization_msgs::Marker>("/route", 10);
         this->_traj_vis_pub = this->_nh->advertise<visualization_msgs::Marker>("/traj", 10);
@@ -396,6 +395,8 @@ namespace hector_app
             __way_pt__[0] = _pose.position.x;
             __way_pt__[1] = _pose.position.y;
 
+            this->_route_vis.points.push_back(_pose.position);
+
             _curr_task_route.push_back(__way_pt__);
         }
 
@@ -414,8 +415,18 @@ namespace hector_app
             std::cout << "Request task" << std::endl;
             std::cout << "Route Length: " << this->_curr_task_route.size() << std::endl;
 
-            if (!_curr_task_route.empty())
+            if (!this->_curr_task_route.empty())
             {
+                this->_route_vis.header.stamp = ros::Time::now();
+                this->_route_vis.header.frame_id = "map";
+                this->_route_vis.action = visualization_msgs::Marker::ADD;
+                this->_route_vis.type = visualization_msgs::Marker::LINE_STRIP;
+                this->_route_vis.pose.orientation.w = 1.0;
+                this->_route_vis.ns = "points_and_lines";
+                this->_route_vis.id = 2;
+                this->_route_vis.scale.x = 0.05;
+                this->_route_vis.color.r = 0.7;
+                this->_route_vis.color.a = 1.0;
             }
             else
             {
@@ -457,11 +468,26 @@ namespace hector_app
                     this->_FLAG = IDLE;
                 }
             }
-            else
-            {
-            }
 
             this->_remote_cmd_pub.publish(_output);
+
+            this->_traj_vis.header.stamp = ros::Time::now();
+            this->_traj_vis.header.frame_id = "map";
+            this->_traj_vis.action = visualization_msgs::Marker::ADD;
+            this->_traj_vis.type = visualization_msgs::Marker::LINE_STRIP;
+            this->_traj_vis.pose.orientation.w = 1.0;
+            this->_traj_vis.ns = "points_and_lines";
+            this->_traj_vis.id = 1;
+            this->_traj_vis.scale.x = 0.05;
+            this->_traj_vis.color.b = 0.7;
+            this->_traj_vis.color.a = 1.0;
+
+            this->_traj_vis.points.push_back(_pose_ptr->pose.position);
+
+            this->_traj_vis_pub.publish(this->_traj_vis);
+
+            this->_route_vis.header.stamp = ros::Time::now();
+            this->_route_vis_pub.publish(this->_route_vis);
         }
         catch (const std::exception &e)
         {
