@@ -21,12 +21,6 @@ namespace hector_app
 
     typedef std::vector<geometry_msgs::PoseArray> RouteNetwork;
 
-    template <typename _T, typename _Tp>
-    double _dist(const _T _p1, const _Tp _p2)
-    {
-        return std::sqrt(std::pow(_p2.x - _p1.x, 2) + std::pow(_p2.y - _p1.y, 2));
-    }
-
     enum CONTROL_FLAG
     {
         MANUAL,
@@ -120,6 +114,8 @@ namespace hector_app
 
         RouteNetwork _network;
 
+        std::size_t _route_hash = 0;
+
         const std::string _DEFAULT_ROUTE_PATH{"/home/hcrd/PiBot/utils/lane_marker/lane.csv"};
 
         void _record_new_route(const geometry_msgs::PoseStampedConstPtr);
@@ -134,6 +130,8 @@ namespace hector_app
         ~RouteManager() { return; }
 
         void setRouteManager(ros::NodeHandle &);
+
+        void refreshRouteFile();
     };
 
     class VehicleController
@@ -155,11 +153,19 @@ namespace hector_app
 
         ros::Publisher _route_request_pub;
 
+        ros::Publisher _route_vis_pub;
+
+        ros::Publisher _traj_vis_pub;
+
         JoystickInput _ps3_input;
 
-        geometry_msgs::PoseArray _curr_task_route;
+        std::list<Eigen::Vector3d> _curr_task_route;
 
         CONTROL_FLAG _FLAG;
+
+        visualization_msgs::Marker _route_vis;
+
+        visualization_msgs::Marker _traj_vis;
 
         void _slam_pose_cb(const geometry_msgs::PoseStampedConstPtr);
 

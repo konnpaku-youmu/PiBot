@@ -1,5 +1,26 @@
 #include "../include/hector_app/hector_app.h"
 
+namespace std
+{
+    template <>
+    struct hash<std::ifstream>
+    {
+        std::size_t operator()(std::ifstream &_file) const
+        {
+            std::string __line__;
+            std::size_t __hash__ = 0;
+
+            while (std::getline(_file, __line__))
+            {
+                std::size_t __h_tmp__ = std::hash<std::string>()(__line__);
+                __hash__ = __hash__ ^ (__h_tmp__ << 1);
+            }
+
+            return __hash__;
+        }
+    };
+} // namespace std
+
 namespace hector_app
 {
     App::App(ros::NodeHandle &_nodehandle)
@@ -7,6 +28,7 @@ namespace hector_app
           _rm(std::make_unique<RouteManager>()),
           _mm(std::make_unique<MapManager>())
     {
+        system("clear");
         this->_vc->setController(_nodehandle);
         this->_rm->setRouteManager(_nodehandle);
         this->_mm->setMapManager(_nodehandle);
@@ -15,6 +37,8 @@ namespace hector_app
         while (ros::ok())
         {
             ros::spinOnce();
+            this->_rm->refreshRouteFile();
+
             __loop__.sleep();
         }
 
@@ -69,7 +93,7 @@ namespace hector_app
 
                 __map_img__.at<int8_t>(__row__, __col__) = __map_val_recast__;
             }
-            cv::rotate(__map_img__, __map_img__, cv::ROTATE_180);
+            cv::flip(__map_img__, __map_img__, 0);
             cv::medianBlur(__map_img__, __map_img__, 3);
 
             cv::imwrite("/home/hcrd/PiBot/utils/lane_marker/map_view.bmp", __map_img__);
@@ -92,9 +116,15 @@ namespace hector_app
         this->_route_dispenser = this->_nh->advertise<geometry_msgs::PoseArray>("/task", 1);
 
         this->_R_FLAG = START;
-        // this->_load_route_file();
+        this->_load_route_file();
 
         this->_new_route_container.poses.clear();
+    }
+
+    void RouteManager::refreshRouteFile()
+    {
+        this->_load_route_file();
+        return;
     }
 
     void RouteManager::_record_new_route(const geometry_msgs::PoseStampedConstPtr _pose_ptr)
@@ -151,33 +181,63 @@ namespace hector_app
 
     void RouteManager::_load_route_file()
     {
-        std::ifstream __lane_csv__(_DEFAULT_ROUTE_PATH);
-        geometry_msgs::PoseArray __route_in_file__;
+        std::ifstream __hash_csv__(_DEFAULT_ROUTE_PATH);
 
-        try
+        // check for modification on route file
+        std::hash<std::ifstream> __hash_lane__;
+        std::size_t __hash__ = __hash_lane__(__hash_csv__);
+        if (__hash__ != this->_route_hash)
         {
-            std::string __coord__;
-            while (std::getline(__lane_csv__, __coord__))
+            // modification detected, (re)load route file
+            std::cout << "Loading route from " << _DEFAULT_ROUTE_PATH << std::endl;
+
+            this->_route_hash = __hash__;
+            // std::cout << this->_route_hash << std::endl;
+
+            geometry_msgs::PoseArray __route_in_file__;
+
+            try
             {
-                geometry_msgs::Pose __waypoint__;
+                std::string __coord__;
+                std::ifstream __lane_csv__(_DEFAULT_ROUTE_PATH);
 
-                size_t __split__ = std::find(__coord__.begin(), __coord__.end(), ',') - __coord__.begin();
+                while (std::getline(__lane_csv__, __coord__))
+                {
+                    geometry_msgs::Pose __waypoint__;
 
-                double _u = std::stod(__coord__.substr(0, __split__));
-                double _v = std::stod(__coord__.substr(__split__ + 1, __coord__.size()));
+                    size_t __split__ = std::find(__coord__.begin(), __coord__.end(), ',') - __coord__.begin();
 
-                __waypoint__.position.x = (_u - MAP_SIZE / 2) * MAP_RES;
-                __waypoint__.position.y = (_v - MAP_SIZE / 2) * MAP_RES;
+                    double _u = std::stod(__coord__.substr(0, __split__));
+                    double _v = std::stod(__coord__.substr(__split__ + 1, __coord__.size()));
 
-                __route_in_file__.poses.push_back(__waypoint__);
+                    __waypoint__.position.x = (_u - MAP_SIZE / 2) * MAP_RES;
+                    __waypoint__.position.y = (MAP_SIZE / 2 - _v) * MAP_RES;
+
+                    // std::cout << '(' << __waypoint__.position.x << ", " << __waypoint__.position.y << ')' << std::endl;
+
+                    __route_in_file__.poses.push_back(__waypoint__);
+                }
+
+                if (this->_network.empty())
+                {
+                    this->_network.push_back(__route_in_file__);
+                }
+                else
+                {
+                    this->_network[0] = __route_in_file__;
+                }
             }
-
-            this->_network.push_back(__route_in_file__);
+            catch (const std::exception &e)
+            {
+                std::cerr << e.what() << '\n';
+            }
         }
-        catch (const std::exception &e)
+        else
         {
-            std::cerr << e.what() << '\n';
+            // do nothing
         }
+
+        return;
     }
 
     VehicleController::VehicleController()
@@ -197,13 +257,19 @@ namespace hector_app
         // setup joystick publisher
         this->_remote_cmd_pub = this->_nh->advertise<geometry_msgs::Twist>("/robot/cmd_vel", 1);
 
+        // link to map manager
         this->_map_ctrl_pub = this->_nh->advertise<std_msgs::Int16>("/map_cmd", 1);
+        
         // link to route manager
         this->_record_pose_relay = this->_nh->advertise<geometry_msgs::PoseStamped>("/pose_record", 1);
         this->_task_route_sub = this->_nh->subscribe("/task", 1, &VehicleController::_task_route_cb, this);
         this->_route_request_pub = this->_nh->advertise<std_msgs::Int16>("/route_request", 1);
+        
+        // visualization publisher
+        this->_route_vis_pub = this->_nh->advertise<visualization_msgs::Marker>("/route", 10);
+        this->_traj_vis_pub = this->_nh->advertise<visualization_msgs::Marker>("/traj", 10);
 
-        this->_curr_task_route.poses.clear();
+        this->_curr_task_route.clear();
 
         return;
     }
@@ -324,81 +390,75 @@ namespace hector_app
 
     void VehicleController::_task_route_cb(const geometry_msgs::PoseArrayConstPtr _route_ptr)
     {
-        this->_curr_task_route = *_route_ptr;
+        for (auto _pose : _route_ptr->poses)
+        {
+            Eigen::Vector3d __way_pt__ = Eigen::Vector3d::Zero();
+            __way_pt__[0] = _pose.position.x;
+            __way_pt__[1] = _pose.position.y;
+
+            _curr_task_route.push_back(__way_pt__);
+        }
+
+        return;
     }
 
     void VehicleController::_run_task(const geometry_msgs::PoseStampedConstPtr _pose_ptr)
     {
         // request route
 
-        if (_curr_task_route.poses.size() == 0)
+        if (_curr_task_route.size() == 0)
         {
             std_msgs::Int16 __route_request__;
             __route_request__.data = 0x0000;
             this->_route_request_pub.publish(__route_request__);
             std::cout << "Request task" << std::endl;
-            std::cout << "Route Length: " << this->_curr_task_route.poses.size() << std::endl;
+            std::cout << "Route Length: " << this->_curr_task_route.size() << std::endl;
+
+            if (!_curr_task_route.empty())
+            {
+            }
+            else
+            {
+                return;
+            }
         }
 
         try
         {
-            std::vector<Eigen::Vector3d> __route_wrt_body__;
-
             Eigen::Quaterniond _q(_pose_ptr->pose.orientation.w,
-                                  _pose_ptr->pose.orientation.w,
+                                  _pose_ptr->pose.orientation.x,
                                   _pose_ptr->pose.orientation.y,
                                   _pose_ptr->pose.orientation.z);
             Eigen::Matrix3d _R(_q);
-            Eigen::Vector3d _t = Eigen::Vector3d::Ones();
+            Eigen::Vector3d _t = Eigen::Vector3d::Zero();
 
             _t[0] = _pose_ptr->pose.position.x;
             _t[1] = _pose_ptr->pose.position.y;
 
-            // transform to body frame
-            for (auto _way_pt : this->_curr_task_route.poses)
-            {
-                Eigen::Vector3d __way_pt__ = Eigen::Vector3d::Ones();
-                __way_pt__[0] = _way_pt.position.x;
-                __way_pt__[1] = _way_pt.position.y;
+            Eigen::Vector3d _dst = _curr_task_route.front();
+            Eigen::Vector3d _dst_body = _R.transpose() * (_dst - _t);
 
-                Eigen::Vector3d _way_pt_t = _R.inverse() * (__way_pt__ - _t);
-
-                __route_wrt_body__.push_back(_way_pt_t);
-            }
-
-            // find nearest intercept waypoint
-            std::vector<int> __indices__;
-            for (auto _way_pt = __route_wrt_body__.begin(); _way_pt != __route_wrt_body__.end(); ++_way_pt)
-            {
-                double _dist = std::sqrt(std::pow(_way_pt->x() - _t.x(), 2) + std::pow(_way_pt->y() - _t.y(), 2));
-                if (_dist <= 1.0)
-                {
-                    __indices__.push_back(_way_pt - __route_wrt_body__.begin());
-                }
-            }
-            int _pt_idx = *std::max_element(__indices__.begin(), __indices__.end());
-
-            std::list<Eigen::Vector3d> _trunc_route(&__route_wrt_body__[_pt_idx], &__route_wrt_body__.back());
-
-            Eigen::Vector3d _dst_body = _trunc_route.front();
             double __dir__ = _dst_body.dot(Eigen::Vector3d(1, 0, 0));
 
             double _angular_e = (__dir__ > 0) ? atan(_dst_body[1] / _dst_body[0]) : -atan(_dst_body[1] / fabs(_dst_body[0]));
             double _linear_e = (__dir__ > 0) ? _dst_body.norm() : -_dst_body.norm();
-            double _kp_angular = 0.35;
+            double _kp_angular = 0.5;
             double _kp_linear = 0.32;
 
             geometry_msgs::Twist _output;
             _output.linear.x = (__dir__ > 0) ? 0.15 : -0.15;
             _output.angular.z = _kp_angular * _angular_e;
-            if (fabs(_linear_e) > 0.1)
+            if (fabs(_linear_e) <= 0.15)
             {
+                _curr_task_route.pop_front();
+                if (_curr_task_route.empty())
+                {
+                    std::cout << "Arrival" << std::endl;
+                    this->_FLAG = IDLE;
+                }
             }
             else
             {
-                Eigen::Vector3d _tmp = _trunc_route.front();
-                _trunc_route.pop_front();
-                _trunc_route.push_back(_tmp);
             }
 
             this->_remote_cmd_pub.publish(_output);
@@ -406,6 +466,12 @@ namespace hector_app
         catch (const std::exception &e)
         {
             std::cerr << e.what() << '\n';
+        }
+
+        if (this->_ps3_input.R1)
+        {
+            this->_curr_task_route.clear();
+            this->_FLAG = IDLE;
         }
 
         return;
