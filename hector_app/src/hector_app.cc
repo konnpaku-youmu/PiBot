@@ -97,7 +97,7 @@ namespace hector_app
             cv::flip(__map_img__, __map_img__, 0);
             cv::medianBlur(__map_img__, __map_img__, 3);
 
-            cv::imwrite("/home/hcrd/PiBot/utils/lane_marker/map_view.bmp", __map_img__);
+            cv::imwrite("/home/hcrd/Projects/PiBot/utils/lane_marker/map_view.bmp", __map_img__);
         }
         std::cout << "Map saved as image" << std::endl;
 
@@ -135,22 +135,35 @@ namespace hector_app
         case START:
             this->_R_FLAG = REC;
         case REC:
-            if (_pose_ptr->pose.orientation.w == 100 && _pose_ptr->pose.orientation.x == -100)
+            if (_pose_ptr->pose.orientation.w >= 99.9)
             {
                 this->_R_FLAG = STOP;
+                std::cout << "Waypoints: " << this->_new_route_container.poses.size() << std::endl;
+                this->_network.push_back(this->_new_route_container);
+                this->_new_route_container.poses.clear();
+                std::cout << "Routes: " << this->_network.size() << std::endl;
+                std::cout << "Stop recording" << std::endl;
             }
             else
             {
-                this->_new_route_container.header = _pose_ptr->header;
-                this->_new_route_container.poses.push_back(_pose_ptr->pose);
+                if (this->_new_route_container.poses.empty())
+                {
+                    this->_new_route_container.header = _pose_ptr->header;
+                    this->_new_route_container.poses.push_back(_pose_ptr->pose);
+                }
+                else
+                {
+                    double __dist__ = sqrt(pow(_pose_ptr->pose.position.x - this->_new_route_container.poses.back().position.x, 2) +
+                                           pow(_pose_ptr->pose.position.y - this->_new_route_container.poses.back().position.y, 2));
+                    if (__dist__ > 0.5)
+                    {
+                        this->_new_route_container.header = _pose_ptr->header;
+                        this->_new_route_container.poses.push_back(_pose_ptr->pose);
+                    }
+                }
             }
             break;
         case STOP:
-            std::cout << "Waypoints: " << this->_new_route_container.poses.size() << std::endl;
-            this->_network.push_back(this->_new_route_container);
-            this->_new_route_container.poses.clear();
-            std::cout << "Routes: " << this->_network.size() << std::endl;
-            std::cout << "Stop recording" << std::endl;
             break;
         default:
             break;
@@ -169,7 +182,7 @@ namespace hector_app
         try
         {
             // send route
-            geometry_msgs::PoseArray __requested_route__ = this->_network[0];
+            geometry_msgs::PoseArray __requested_route__ = this->_network[__route_id__];
             __requested_route__.header.stamp = ros::Time::now();
             this->_route_dispenser.publish(__requested_route__);
             std::cout << "route published, length: " << __requested_route__.poses.size() << std::endl;
@@ -241,6 +254,10 @@ namespace hector_app
 
     VehicleController::VehicleController()
     {
+        this->_timestamp = ros::Time::now().toSec();
+        this->_err_a_diff = 0;
+        this->_prev_err_a = 0;
+        this->_err_a_int = 0;
     }
 
     void VehicleController::setController(ros::NodeHandle &_nodehandle)
@@ -251,6 +268,7 @@ namespace hector_app
         // subscribe to HectorSLAM localization result
         this->_vehicle_pose_sub = this->_nh->subscribe("/slam_out_pose", 1, &VehicleController::_slam_pose_cb, this);
 
+        this->_raw_scan_sub = this->_nh->subscribe("/robot/laser", 1, &VehicleController::_raw_scan_cb, this);
         // subscribe to joystick input
         this->_joy_command_sub = this->_nh->subscribe("/joy", 1, &VehicleController::_joy_command_cb, this);
         // setup joystick publisher
@@ -317,6 +335,12 @@ namespace hector_app
         }
     }
 
+    void VehicleController::_raw_scan_cb(const sensor_msgs::LaserScanConstPtr _scan_ptr)
+    {
+        int __leftmost_range__, __rightmost_range__;
+        __leftmost_range__ = M_PI_4;
+    }
+
     void VehicleController::_slam_pose_cb(const geometry_msgs::PoseStampedConstPtr _pose_ptr)
     {
         switch (this->_FLAG)
@@ -334,6 +358,7 @@ namespace hector_app
             this->_draw_map();
             break;
         default:
+            this->_curr_task_route.clear();
             break;
         }
 
@@ -410,23 +435,13 @@ namespace hector_app
         if (_curr_task_route.size() == 0)
         {
             std_msgs::Int16 __route_request__;
-            __route_request__.data = 0x0000;
+            __route_request__.data = 0x0001;
             this->_route_request_pub.publish(__route_request__);
             std::cout << "Request task" << std::endl;
             std::cout << "Route Length: " << this->_curr_task_route.size() << std::endl;
 
             if (!this->_curr_task_route.empty())
             {
-                this->_route_vis.header.stamp = ros::Time::now();
-                this->_route_vis.header.frame_id = "map";
-                this->_route_vis.action = visualization_msgs::Marker::ADD;
-                this->_route_vis.type = visualization_msgs::Marker::LINE_STRIP;
-                this->_route_vis.pose.orientation.w = 1.0;
-                this->_route_vis.ns = "points_and_lines";
-                this->_route_vis.id = 2;
-                this->_route_vis.scale.x = 0.05;
-                this->_route_vis.color.r = 0.7;
-                this->_route_vis.color.a = 1.0;
             }
             else
             {
@@ -449,45 +464,110 @@ namespace hector_app
             Eigen::Vector3d _dst = _curr_task_route.front();
             Eigen::Vector3d _dst_body = _R.transpose() * (_dst - _t);
 
-            double __dir__ = _dst_body.dot(Eigen::Vector3d(1, 0, 0));
+            geometry_msgs::Twist __output__;
 
-            double _angular_e = (__dir__ > 0) ? atan(_dst_body[1] / _dst_body[0]) : -atan(_dst_body[1] / fabs(_dst_body[0]));
-            double _linear_e = (__dir__ > 0) ? _dst_body.norm() : -_dst_body.norm();
-            double _kp_angular = 0.5;
-            double _kp_linear = 0.32;
-
-            geometry_msgs::Twist _output;
-            _output.linear.x = (__dir__ > 0) ? 0.15 : -0.15;
-            _output.angular.z = _kp_angular * _angular_e;
-            if (fabs(_linear_e) <= 0.15)
+            // PID Control -- Point
             {
-                _curr_task_route.pop_front();
-                if (_curr_task_route.empty())
+                double __dt__ = ros::Time::now().toSec() - this->_timestamp;
+
+                if (__dt__ > 0.2)
                 {
-                    std::cout << "Arrival" << std::endl;
-                    this->_FLAG = IDLE;
+                    __dt__ = 0.2;
                 }
+
+                double __dir__ = _dst_body.dot(Eigen::Vector3d(1, 0, 0));
+
+                double __error_a__, __error_l__;
+
+                double _kp_angular = 1.5, _ki_angular = 0.05, _kd_angular = -0.4;
+                double _kp_linear = 0.25;
+
+                if (__dir__ >= 0)
+                {
+                    __error_a__ = atan(_dst_body[1] / _dst_body[0]) / M_PI;
+                    __error_l__ = _dst_body.norm();
+                }
+                else
+                {
+                    __error_a__ = -atan(_dst_body[1] / fabs(_dst_body[0])) / M_PI;
+                    __error_l__ = -_dst_body.norm();
+                }
+
+                _err_a_int += __error_a__ * __dt__;
+                _err_a_diff = (__error_a__ - _prev_err_a) / __dt__;
+                __output__.angular.z = _kp_angular * __error_a__ + _ki_angular * _err_a_int + _kd_angular * _err_a_diff;
+
+                if (__output__.angular.z >= 0.7)
+                {
+                    __output__.angular.z = 0.7;
+                }
+                else if (__output__.angular.z <= -0.7)
+                {
+                    __output__.angular.z = -0.7;
+                }
+
+                if (__dir__ >= 0)
+                {
+                    __output__.linear.x = 0.3 - 0.4 * fabs(__error_a__);
+                }
+                else
+                {
+                    __output__.linear.x = -0.1;
+                }
+
+                if (fabs(__error_l__) <= 0.2)
+                {
+                    Eigen::Vector3d __last_pt__ = this->_curr_task_route.front();
+                    this->_curr_task_route.pop_front();
+                    this->_curr_task_route.push_back(__last_pt__);
+
+                    this->_err_a_int = 0;
+
+                    if (_curr_task_route.empty())
+                    {
+                        std::cout << "Arrival" << std::endl;
+                        this->_route_vis.points.clear();
+                        this->_FLAG = IDLE;
+                    }
+                }
+
+                this->_timestamp = ros::Time::now().toSec();
+                this->_prev_err_a = __error_a__;
+            }
+            // PID Control -- Line
+            {
             }
 
-            this->_remote_cmd_pub.publish(_output);
+            this->_remote_cmd_pub.publish(__output__);
 
-            this->_traj_vis.header.stamp = ros::Time::now();
-            this->_traj_vis.header.frame_id = "map";
-            this->_traj_vis.action = visualization_msgs::Marker::ADD;
-            this->_traj_vis.type = visualization_msgs::Marker::LINE_STRIP;
-            this->_traj_vis.pose.orientation.w = 1.0;
-            this->_traj_vis.ns = "points_and_lines";
-            this->_traj_vis.id = 1;
-            this->_traj_vis.scale.x = 0.05;
-            this->_traj_vis.color.b = 0.7;
-            this->_traj_vis.color.a = 1.0;
+            {
+                this->_traj_vis.header.stamp = ros::Time::now();
+                this->_traj_vis.header.frame_id = "map";
+                this->_traj_vis.action = visualization_msgs::Marker::ADD;
+                this->_traj_vis.type = visualization_msgs::Marker::LINE_STRIP;
+                this->_traj_vis.pose.orientation.w = 1.0;
+                this->_traj_vis.ns = "points_and_lines";
+                this->_traj_vis.id = 1;
+                this->_traj_vis.scale.x = 0.03;
+                this->_traj_vis.color.b = 0.7;
+                this->_traj_vis.color.a = 1.0;
 
-            this->_traj_vis.points.push_back(_pose_ptr->pose.position);
+                this->_traj_vis.points.push_back(_pose_ptr->pose.position);
 
-            this->_traj_vis_pub.publish(this->_traj_vis);
+                this->_traj_vis_pub.publish(this->_traj_vis);
 
-            this->_route_vis.header.stamp = ros::Time::now();
-            this->_route_vis_pub.publish(this->_route_vis);
+                this->_route_vis.header.stamp = ros::Time::now();
+                this->_route_vis.header.frame_id = "map";
+                this->_route_vis.action = visualization_msgs::Marker::ADD;
+                this->_route_vis.type = visualization_msgs::Marker::LINE_STRIP;
+                this->_route_vis.pose.orientation.w = 1.0;
+                this->_route_vis.ns = "points_and_lines";
+                this->_route_vis.id = 2;
+                this->_route_vis.scale.x = 0.05;
+                this->_route_vis.color.r = 0.7;
+                this->_route_vis.color.a = 1.0;
+                this->_route_vis_pub.publish(this->_route_vis);
+            }
         }
         catch (const std::exception &e)
         {

@@ -6,6 +6,7 @@
 #include <eigen3/Eigen/Eigen>
 #include <std_msgs/Int16.h>
 #include <sensor_msgs/Joy.h>
+#include <sensor_msgs/LaserScan.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/PoseArray.h>
 #include <geometry_msgs/Twist.h>
@@ -116,7 +117,7 @@ namespace hector_app
 
         std::size_t _route_hash = 0;
 
-        const std::string _DEFAULT_ROUTE_PATH{"/home/hcrd/PiBot/utils/lane_marker/lane.csv"};
+        const std::string _DEFAULT_ROUTE_PATH{"/home/hcrd/Projects/PiBot/utils/lane_marker/lane.csv"};
 
         void _record_new_route(const geometry_msgs::PoseStampedConstPtr);
 
@@ -145,6 +146,8 @@ namespace hector_app
 
         ros::Subscriber _task_route_sub;
 
+        ros::Subscriber _raw_scan_sub;
+
         ros::Publisher _remote_cmd_pub;
 
         ros::Publisher _map_ctrl_pub;
@@ -167,9 +170,17 @@ namespace hector_app
 
         visualization_msgs::Marker _traj_vis;
 
+        double _timestamp;
+
+        double _err_a_int, _err_a_diff;
+
+        double _prev_err_a;
+
         void _slam_pose_cb(const geometry_msgs::PoseStampedConstPtr);
 
         void _joy_command_cb(const sensor_msgs::JoyConstPtr);
+
+        void _raw_scan_cb(const sensor_msgs::LaserScanConstPtr);
 
         void _use_remote_control();
 
