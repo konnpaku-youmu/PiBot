@@ -264,11 +264,12 @@ namespace hector_app
     {
         this->_nh = boost::make_shared<ros::NodeHandle>(_nodehandle);
         this->_FLAG = IDLE;
+        this->_OBSTACLE_FLAG = FREE;
 
         // subscribe to HectorSLAM localization result
         this->_vehicle_pose_sub = this->_nh->subscribe("/slam_out_pose", 1, &VehicleController::_slam_pose_cb, this);
 
-        this->_raw_scan_sub = this->_nh->subscribe("/robot/laser", 1, &VehicleController::_raw_scan_cb, this);
+        this->_raw_scan_sub = this->_nh->subscribe("/robot/scan", 5, &VehicleController::_raw_scan_cb, this);
         // subscribe to joystick input
         this->_joy_command_sub = this->_nh->subscribe("/joy", 1, &VehicleController::_joy_command_cb, this);
         // setup joystick publisher
@@ -337,8 +338,63 @@ namespace hector_app
 
     void VehicleController::_raw_scan_cb(const sensor_msgs::LaserScanConstPtr _scan_ptr)
     {
-        int __leftmost_range__, __rightmost_range__;
-        __leftmost_range__ = M_PI_4;
+        int __leftmost_front__, __rightmost_front__;
+        int __leftmost_rear__, __rightmost_rear__;
+
+        __leftmost_front__ =  (5 * M_PI / 6.0) / _scan_ptr->angle_increment;
+        __rightmost_front__ = (7 * M_PI / 6.0) / _scan_ptr->angle_increment;
+        __leftmost_rear__ = (M_PI / 6) / _scan_ptr->angle_increment;
+        __rightmost_rear__ = (11 * M_PI / 6.0) / _scan_ptr->angle_increment;
+
+        double __min_dist_front__ = 100.0;
+        double __min_dist_rear__ = 100.0;
+        int __index_front__ = -1;
+        int __index_rear__ = -1;
+        for (size_t i = __leftmost_front__; i < __rightmost_front__; ++i)
+        {
+            if (_scan_ptr->ranges[i] < __min_dist_front__)
+            {
+                __min_dist_front__ = _scan_ptr->ranges[i];
+                __index_front__ = i;
+            }
+        }
+        for (size_t i = 0; i < __leftmost_rear__; ++i)
+        {
+            if (_scan_ptr->ranges[i] < __min_dist_rear__)
+            {
+                __min_dist_rear__ = _scan_ptr->ranges[i];
+                __index_rear__ = i;
+            }
+        }
+        for (size_t i = __rightmost_rear__; i < _scan_ptr->ranges.size(); ++i)
+        {
+            if (_scan_ptr->ranges[i] < __min_dist_rear__)
+            {
+                __min_dist_rear__ = _scan_ptr->ranges[i];
+                __index_rear__ = i;
+            }
+        }
+
+        if (__min_dist_front__ <= 0.25 && __index_front__ < _scan_ptr->ranges.size() * 0.5)
+        {
+            _OBSTACLE_FLAG = FRONT_LEFT;
+        }
+        else if (__min_dist_front__ <= 0.25 && __index_front__ >= _scan_ptr->ranges.size() * 0.5)
+        {
+            _OBSTACLE_FLAG = FRONT_RIGHT;
+        }
+        else if (__min_dist_rear__ <= 0.2 && __index_rear__ < _scan_ptr->ranges.size() * 0.5)
+        {
+            _OBSTACLE_FLAG = REAR_LEFT;
+        }
+        else if (__min_dist_rear__ <= 0.2 && __index_rear__ >= _scan_ptr->ranges.size() * 0.5)
+        {
+            _OBSTACLE_FLAG = REAR_RIGHT;
+        }
+        else
+        {
+            _OBSTACLE_FLAG = FREE;
+        }
     }
 
     void VehicleController::_slam_pose_cb(const geometry_msgs::PoseStampedConstPtr _pose_ptr)
@@ -361,7 +417,6 @@ namespace hector_app
             this->_curr_task_route.clear();
             break;
         }
-
         return;
     }
 
@@ -376,7 +431,14 @@ namespace hector_app
         __cmd_vel__.angular.z = (__angular_velocity__ > 0) ? exp(0.3 * __angular_velocity__) - 1 : 1 - exp(-0.3 * __angular_velocity__);
 
         // publish control commands
-        this->_remote_cmd_pub.publish(__cmd_vel__);
+        if (this->_OBSTACLE_FLAG == FREE)
+        {
+            this->_remote_cmd_pub.publish(__cmd_vel__);
+        }
+        else
+        {
+            this->_divert();
+        }
 
         return;
     }
@@ -435,7 +497,7 @@ namespace hector_app
         if (_curr_task_route.size() == 0)
         {
             std_msgs::Int16 __route_request__;
-            __route_request__.data = 0x0001;
+            __route_request__.data = 0x0000;
             this->_route_request_pub.publish(__route_request__);
             std::cout << "Request task" << std::endl;
             std::cout << "Route Length: " << this->_curr_task_route.size() << std::endl;
@@ -479,7 +541,7 @@ namespace hector_app
 
                 double __error_a__, __error_l__;
 
-                double _kp_angular = 1.5, _ki_angular = 0.05, _kd_angular = -0.4;
+                double _kp_angular = 1.4, _ki_angular = 0.09, _kd_angular = -0.3;
                 double _kp_linear = 0.25;
 
                 if (__dir__ >= 0)
@@ -508,7 +570,7 @@ namespace hector_app
 
                 if (__dir__ >= 0)
                 {
-                    __output__.linear.x = 0.3 - 0.4 * fabs(__error_a__);
+                    __output__.linear.x = 0.3 - 0.35 * fabs(__error_a__);
                 }
                 else
                 {
@@ -538,7 +600,14 @@ namespace hector_app
             {
             }
 
-            this->_remote_cmd_pub.publish(__output__);
+            if (this->_OBSTACLE_FLAG == FREE)
+            {
+                this->_remote_cmd_pub.publish(__output__);
+            }
+            else
+            {
+                this->_divert();
+            }
 
             {
                 this->_traj_vis.header.stamp = ros::Time::now();
@@ -579,6 +648,36 @@ namespace hector_app
             this->_curr_task_route.clear();
             this->_FLAG = IDLE;
         }
+
+        return;
+    }
+
+    void VehicleController::_divert()
+    {
+        geometry_msgs::Twist __output__;
+
+        if (this->_OBSTACLE_FLAG == FRONT_LEFT)
+        {
+            __output__.linear.x = -0.2;
+            __output__.angular.z = 0.3;
+        }
+        else if (this->_OBSTACLE_FLAG == FRONT_RIGHT)
+        {
+            __output__.linear.x = -0.2;
+            __output__.angular.z = -0.3;
+        }
+        else if (this->_OBSTACLE_FLAG == REAR_LEFT)
+        {
+            __output__.linear.x = 0.2;
+            __output__.angular.z = -0.3;
+        }
+        else if (this->_OBSTACLE_FLAG == REAR_RIGHT)
+        {
+            __output__.linear.x = 0.2;
+            __output__.angular.z = 0.3;
+        }
+
+        this->_remote_cmd_pub.publish(__output__);
 
         return;
     }

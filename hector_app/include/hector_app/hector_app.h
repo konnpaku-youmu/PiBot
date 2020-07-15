@@ -32,6 +32,15 @@ namespace hector_app
         IDLE
     };
 
+    enum OBS_FLAG
+    {
+        FRONT_LEFT,
+        FRONT_RIGHT,
+        REAR_LEFT,
+        REAR_RIGHT,
+        FREE
+    };
+
     enum RECORD_FLAG
     {
         START,
@@ -166,6 +175,8 @@ namespace hector_app
 
         CONTROL_FLAG _FLAG;
 
+        OBS_FLAG _OBSTACLE_FLAG;
+
         visualization_msgs::Marker _route_vis;
 
         visualization_msgs::Marker _traj_vis;
@@ -191,6 +202,8 @@ namespace hector_app
         void _task_route_cb(const geometry_msgs::PoseArrayConstPtr);
 
         void _run_task(const geometry_msgs::PoseStampedConstPtr);
+
+        void _divert();
 
     public:
         VehicleController();
