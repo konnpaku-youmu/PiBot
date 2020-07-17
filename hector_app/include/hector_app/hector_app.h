@@ -12,6 +12,7 @@
 #include <geometry_msgs/Twist.h>
 #include <nav_msgs/OccupancyGrid.h>
 #include <visualization_msgs/Marker.h>
+#include <jsk_recognition_msgs/BoundingBoxArray.h>
 
 #include <opencv2/opencv.hpp>
 
@@ -29,6 +30,7 @@ namespace hector_app
         EXPLORE,
         PATH_RECORD,
         MAP_RECORD,
+        AUTO_RETURN,
         IDLE
     };
 
@@ -157,6 +159,8 @@ namespace hector_app
 
         ros::Subscriber _raw_scan_sub;
 
+        ros::Subscriber _infra_sub;
+
         ros::Publisher _remote_cmd_pub;
 
         ros::Publisher _map_ctrl_pub;
@@ -193,9 +197,13 @@ namespace hector_app
 
         void _raw_scan_cb(const sensor_msgs::LaserScanConstPtr);
 
+        void _infra_obs_cb(const jsk_recognition_msgs::BoundingBoxArrayConstPtr);
+
         void _use_remote_control();
 
         void _record_curr_path(const geometry_msgs::PoseStampedConstPtr);
+
+        void _auto_return();
 
         void _draw_map();
 

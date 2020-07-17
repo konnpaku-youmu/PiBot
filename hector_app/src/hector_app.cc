@@ -278,6 +278,8 @@ namespace hector_app
         // link to map manager
         this->_map_ctrl_pub = this->_nh->advertise<std_msgs::Int16>("/map_cmd", 1);
 
+        this->_infra_sub = this->_nh->subscribe("/obj_on_track", 5, &VehicleController::_infra_obs_cb, this);
+
         // link to route manager
         this->_record_pose_relay = this->_nh->advertise<geometry_msgs::PoseStamped>("/pose_record", 1);
         this->_task_route_sub = this->_nh->subscribe("/task", 1, &VehicleController::_task_route_cb, this);
@@ -395,7 +397,15 @@ namespace hector_app
         {
             _OBSTACLE_FLAG = FREE;
         }
+
+        return;
     }
+
+    void VehicleController::_infra_obs_cb(const jsk_recognition_msgs::BoundingBoxArrayConstPtr _obs_ptr)
+    {
+        
+        return;
+    }    
 
     void VehicleController::_slam_pose_cb(const geometry_msgs::PoseStampedConstPtr _pose_ptr)
     {
@@ -412,6 +422,9 @@ namespace hector_app
             break;
         case MAP_RECORD:
             this->_draw_map();
+            break;
+        case AUTO_RETURN:
+            this->_auto_return();
             break;
         default:
             this->_curr_task_route.clear();
@@ -458,6 +471,12 @@ namespace hector_app
             this->_record_pose_relay.publish(_terminate_pose);
             this->_FLAG = IDLE;
         }
+
+        return;
+    }
+
+    void VehicleController::_auto_return()
+    {
 
         return;
     }
